@@ -22,7 +22,6 @@ DEFAULT_BASELINE_CGROUP = "baseline_test"
 
 
 class CacheExtPolicy:
-
     def set_cgroup(self, cgroup: str):
         """Set the cgroup path for the policy."""
         self.cgroup_path = f"/sys/fs/cgroup/{cgroup}"
@@ -277,7 +276,11 @@ def disable_swap():
 
 
 def disable_smt():
-    run(["sudo", "sh", "-c", "echo off > /sys/devices/system/cpu/smt/control"])
+    """
+    monkeypatched because VM does not have /control file. SMT is already disabled
+    """
+    # run(["sudo", "sh", "-c", "echo off > /sys/devices/system/cpu/smt/control"])
+    pass
 
 
 def enable_smt():
