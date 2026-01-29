@@ -284,7 +284,11 @@ def disable_smt():
 
 
 def enable_smt():
-    run(["sudo", "sh", "-c", "echo on > /sys/devices/system/cpu/smt/control"])
+    """
+    monkeypatched because VM does not have /control file. SMT is already disabled
+    """
+    # run(["sudo", "sh", "-c", "echo on > /sys/devices/system/cpu/smt/control"])
+    pass
 
 
 def rsync_folder(source_dir: str, dest_dir: str):
