@@ -1,5 +1,6 @@
 #include <argp.h>
 #include <bpf/bpf.h>
+#include <bpf/libbpf.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
@@ -7,7 +8,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "cache_ext_mglru.skel.h"
+#include "cache_ext_mglru_lc.skel.h"
 #include "dir_watcher.h"
 
 char *USAGE = "Usage: ./cache_ext_mglru --watch_dir <dir> --cgroup_path <path>\n";
@@ -38,10 +39,63 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 	return 0;
 }
 
+struct cache_access_fields {
+    uint64_t timestamp;      // a: bpf_ktime_get_ns()
+    uint64_t time_delta;     // t: delta since last access (ns)
+    uint32_t major;          // d: device major
+    uint32_t minor;          // d: device minor
+    uint64_t ino;            // i: inode number (i_ino)
+    uint64_t offset;         // o: page index (folio index)
+    bool is_sequential;  // s: boolean (0 or 1)
+    uint64_t file_size;      // z: file size
+    uint32_t frequency;      // f: frequency
+};
+
+struct cache_insertion_event {
+    uint64_t timestamp;   /* t: bpf_ktime_get_ns() */
+    uint32_t major;       /* d: device major */
+    uint32_t minor;       /* d: device minor */
+    uint64_t ino;         /* i: inode number (data.i_ino) */
+    uint64_t index;       /* x: page index (data.index) */
+};
+
+static int handle_access(void *ctx, void *data, size_t len)
+{
+    struct cache_access_fields *access_event = data;
+    printf(
+        "a=%lu t=%lu d=%u:%u i=%lu o=%lu s=%u z=%lu f=%u\n",
+        access_event->timestamp,
+        access_event->time_delta,
+        access_event->major,
+        access_event->minor,
+        access_event->ino,
+        access_event->offset,
+        access_event->is_sequential ? 1 : 0,
+        access_event->file_size,
+        access_event->frequency
+    );
+    return 0;
+}
+
+static int handle_insertion(void *ctx, void *data, size_t len)
+{
+    struct cache_insertion_event *insertion_event = data;
+    printf(
+        "t=%lu d=%u:%u i=%lu x=%lu\n",
+        insertion_event->timestamp,
+        insertion_event->major,
+        insertion_event->minor,
+        insertion_event->ino,
+        insertion_event->index
+    );
+    return 0;
+}
+
+
 int main(int argc, char **argv)
 {
 	int ret = 1;
-	struct cache_ext_mglru_bpf *skel = NULL;
+	struct cache_ext_mglru_lc_bpf *skel = NULL;
 	struct bpf_link *link = NULL;
 	int cgroup_fd = -1;
 	libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
@@ -90,7 +144,7 @@ int main(int argc, char **argv)
 	}
 
 	// Open skel
-	skel = cache_ext_mglru_bpf__open();
+	skel = cache_ext_mglru_lc_bpf__open();
 	if (skel == NULL) {
 		perror("Failed to open BPF skeleton");
 		goto cleanup;
@@ -101,7 +155,7 @@ int main(int argc, char **argv)
 	strcpy(skel->rodata->watch_dir_path, watch_dir_full_path);
 
 	// Load programs
-	ret = cache_ext_mglru_bpf__load(skel);
+	ret = cache_ext_mglru_lc_bpf__load(skel);
 	if (ret) {
 		perror("Failed to load BPF skeleton");
 		goto cleanup;
@@ -119,11 +173,14 @@ int main(int argc, char **argv)
 	}
 
 	// Attach probes
-	ret = cache_ext_mglru_bpf__attach(skel);
+	ret = cache_ext_mglru_lc_bpf__attach(skel);
 	if (ret) {
 		perror("Failed to attach BPF programs");
 		goto cleanup;
 	}
+
+	rb_access = ring_buffer__new(bpf_map__fd(skel->maps.rb_access), handle_access, NULL, NULL);
+	rb_insertion = ring_buffer__new(bpf_map__fd(skel->maps.rb_insertion), handle_insertion, NULL, NULL);
 
 	// Wait for keyboard input
 	printf("Press any key to exit...\n");
