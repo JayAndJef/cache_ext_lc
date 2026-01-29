@@ -12,7 +12,7 @@ SCRIPT_PATH=$(realpath $0)
 BASE_DIR=$(realpath "$(dirname $SCRIPT_PATH)/../../")
 BENCH_PATH="$BASE_DIR/bench"
 POLICY_PATH="$BASE_DIR/policies"
-FILES_PATH=$(realpath "$BASE_DIR/../linux")
+FILES_PATH=$(realpath "$BASE_DIR/linux")
 RESULTS_PATH="$BASE_DIR/results"
 
 ITERATIONS=3
