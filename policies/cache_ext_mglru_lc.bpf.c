@@ -928,23 +928,23 @@ struct {
 } rb_insertion SEC(".maps");
 
 struct cache_access_fields {
-    uint64_t timestamp;      // a: bpf_ktime_get_ns()
-    uint64_t time_delta;     // t: delta since last access (ns)
-    uint32_t major;          // d: device major
-    uint32_t minor;          // d: device minor
-    uint64_t ino;            // i: inode number (i_ino)
-    uint64_t offset;         // o: page index (folio index)
-    bool is_sequential;  // s: boolean (0 or 1)
-    uint64_t file_size;      // z: file size
-    uint32_t frequency;      // f: frequency
+    __u64 timestamp;        // a: bpf_ktime_get_ns()
+    __u64 time_delta;       // t: delta since last access (ns)
+    __u32 major;            // d: device major
+    __u32 minor;            // d: device minor
+    __u64 ino;              // i: inode number (i_ino)
+    __u64 offset;           // o: page index (folio index)
+    __u8  is_sequential;    // s: boolean (0 or 1)
+    __u64 file_size;        // z: file size
+    __u32 frequency;        // f: frequency
 };
 
 struct cache_insertion_event {
-    uint64_t timestamp;   /* t: bpf_ktime_get_ns() */
-    uint32_t major;       /* d: device major */
-    uint32_t minor;       /* d: device minor */
-    uint64_t ino;         /* i: inode number (data.i_ino) */
-    uint64_t index;       /* x: page index (data.index) */
+    __u64 timestamp;   /* t: bpf_ktime_get_ns() */
+    __u32 major;       /* d: device major */
+    __u32 minor;       /* d: device minor */
+    __u64 ino;         /* i: inode number (data.i_ino) */
+    __u64 index;       /* x: page index (data.index) */
 };
 
 int send_access_log(struct cache_access_fields *fields) {
