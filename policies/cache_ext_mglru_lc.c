@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <syslog.h>
 
 #include "cache_ext_mglru_lc.skel.h"
 #include "dir_watcher.h"
@@ -39,6 +40,8 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 	return 0;
 }
 
+static const char *program_name = "";
+
 struct cache_access_fields {
     uint64_t timestamp;      // a: bpf_ktime_get_ns()
     uint64_t time_delta;     // t: delta since last access (ns)
@@ -62,8 +65,9 @@ struct cache_insertion_event {
 static int handle_access(void *ctx, void *data, size_t len)
 {
     struct cache_access_fields *access_event = data;
-    printf(
-        "a=%lu t=%lu d=%u:%u i=%lu o=%lu s=%u z=%lu f=%u\n",
+    syslog(
+        LOG_INFO,
+        "tracer_cache_access: a=%lu t=%lu d=%u:%u i=%lu o=%lu s=%u z=%lu f=%u\n",
         access_event->timestamp,
         access_event->time_delta,
         access_event->major,
@@ -80,8 +84,9 @@ static int handle_access(void *ctx, void *data, size_t len)
 static int handle_insertion(void *ctx, void *data, size_t len)
 {
     struct cache_insertion_event *insertion_event = data;
-    printf(
-        "t=%lu d=%u:%u i=%lu x=%lu\n",
+    syslog(
+        LOG_INFO,
+        "tracer_cache_insertion: t=%lu d=%u:%u i=%lu x=%lu\n",
         insertion_event->timestamp,
         insertion_event->major,
         insertion_event->minor,
@@ -149,6 +154,9 @@ int main(int argc, char **argv)
 		perror("Failed to open BPF skeleton");
 		goto cleanup;
 	}
+
+	// enable syslog
+	openlog(program_name, getpid(), LOG_USER);
 
 	// Set watch_dir
 	skel->rodata->watch_dir_path_len = strlen(watch_dir_full_path);
