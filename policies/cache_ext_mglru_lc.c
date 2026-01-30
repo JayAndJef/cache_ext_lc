@@ -42,6 +42,9 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 static const char *program_name = "";
 
+struct ring_buffer *rb_access = NULL;
+struct ring_buffer *rb_insertion = NULL;
+
 struct cache_access_fields {
     uint64_t timestamp;      // a: bpf_ktime_get_ns()
     uint64_t time_delta;     // t: delta since last access (ns)
@@ -198,6 +201,6 @@ int main(int argc, char **argv)
 cleanup:
 	close(cgroup_fd);
 	bpf_link__destroy(link);
-	cache_ext_mglru_bpf__destroy(skel);
+	cache_ext_mglru_bpf_lc__destroy(skel);
 	return ret;
 }
