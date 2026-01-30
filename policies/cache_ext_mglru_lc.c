@@ -201,6 +201,6 @@ int main(int argc, char **argv)
 cleanup:
 	close(cgroup_fd);
 	bpf_link__destroy(link);
-	cache_ext_mglru_bpf_lc__destroy(skel);
+	cache_ext_mglru_lc_bpf__destroy(skel);
 	return ret;
 }
