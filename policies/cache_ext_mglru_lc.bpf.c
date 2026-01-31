@@ -662,6 +662,41 @@ struct {
 	__type(value, struct eviction_metadata);
 } mglru_percpu_array SEC(".maps");
 
+// Per-folio tracking structures (ported from Rust tracers)
+struct tracer_page_state {
+	__u64 first_access_time;
+	__u64 last_access_time;
+	__u64 last_file_offset;
+	__u64 file_size;
+	__u32 frequency;
+};
+
+struct file_key {
+	__u32 dev;
+	__u64 ino;
+};
+
+struct file_state {
+	__u64 last_offset;
+	__u64 last_access_time;
+};
+
+// Per-folio map: key is folio pointer
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__uint(max_entries, 8000000);
+	__type(key, u64);
+	__type(value, struct tracer_page_state);
+} per_folio_map SEC(".maps");
+
+// Per-file map for sequential tracking
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__uint(max_entries, 1000000);
+	__type(key, struct file_key);
+	__type(value, struct file_state);
+} per_file_map SEC(".maps");
+
 
 struct eviction_metadata * get_eviction_metadata() {
 	u32 key = 0;
@@ -689,6 +724,229 @@ inline bool is_folio_relevant(struct folio *folio)
 	}
 	bool res = inode_in_watchlist(folio->mapping->host->i_ino);
 	return res;
+}
+
+////////////
+// tracer //
+////////////
+
+
+
+////////////
+// Logger //
+////////////
+
+struct {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, 1 << 24);
+} rb_access SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, 1 << 24);
+} rb_insertion SEC(".maps");
+
+struct cache_access_fields {
+    __u64 timestamp;        // a: bpf_ktime_get_ns()
+    __u64 time_delta;       // t: delta since last access (ns)
+    __u32 major;            // d: device major
+    __u32 minor;            // d: device minor
+    __u64 ino;              // i: inode number (i_ino)
+    __u64 offset;           // o: page index (folio index)
+    __u8  is_sequential;    // s: boolean (0 or 1)
+    __u64 file_size;        // z: file size
+    __u32 frequency;        // f: frequency
+};
+
+struct cache_insertion_event {
+    __u64 timestamp;   /* t: bpf_ktime_get_ns() */
+    __u32 major;       /* d: device major */
+    __u32 minor;       /* d: device minor */
+    __u64 ino;         /* i: inode number (data.i_ino) */
+    __u64 index;       /* x: page index (data.index) */
+};
+
+int send_access_log(struct cache_access_fields *fields) {
+    struct cache_access_fields *res_ptr = bpf_ringbuf_reserve(&rb_access, sizeof(*fields), 0);
+    if (res_ptr == NULL) {
+        return -1;
+    }
+
+    *res_ptr = *fields;
+    bpf_ringbuf_submit(res_ptr, 0);
+    return 0;
+}
+
+int send_insertion_log(struct cache_insertion_event *event) {
+    struct cache_insertion_event *res_ptr = bpf_ringbuf_reserve(&rb_insertion, sizeof(*event), 0);
+    if (res_ptr == NULL) {
+        return -1;
+    }
+
+    *res_ptr = *event;
+    bpf_ringbuf_submit(res_ptr, 0);
+    return 0;
+}
+
+static inline u32 get_folio_dev(struct folio *folio) {
+	if (!folio || !folio->mapping || !folio->mapping->host || !folio->mapping->host->i_sb)
+		return 0;
+	return folio->mapping->host->i_sb->s_dev;
+}
+
+static inline u64 get_folio_ino(struct folio *folio) {
+	if (!folio || !folio->mapping || !folio->mapping->host)
+		return 0;
+	return folio->mapping->host->i_ino;
+}
+
+static inline u64 get_folio_file_size(struct folio *folio) {
+	if (!folio || !folio->mapping || !folio->mapping->host)
+		return 0;
+	return folio->mapping->host->i_size;
+}
+
+static inline void track_folio_access(struct folio *folio) {
+	u64 timestamp = bpf_ktime_get_ns();
+	u64 folio_key = (u64)folio;
+	u64 index = folio->index;
+
+	u32 s_dev = get_folio_dev(folio);
+	u64 i_ino = get_folio_ino(folio);
+	u64 file_size = get_folio_file_size(folio);
+
+	if (s_dev == 0 || i_ino == 0) {
+		return;
+	}
+
+	struct file_key fkey = {
+		.dev = s_dev,
+		.ino = i_ino,
+	};
+
+	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
+	struct file_state *file_state = bpf_map_lookup_elem(&per_file_map, &fkey);
+
+	u64 time_delta = 0;
+	if (page_state) {
+		if (timestamp >= page_state->last_access_time) {
+			time_delta = timestamp - page_state->last_access_time;
+		}
+	}
+
+	bool is_sequential = false;
+	if (file_state) {
+		u64 offset_diff = index > file_state->last_offset ?
+			index - file_state->last_offset :
+			file_state->last_offset - index;
+		is_sequential = (offset_diff > 0 && offset_diff <= 64);
+	}
+
+	u32 frequency = 1000;
+	if (page_state) {
+		if (time_delta > 0) {
+			u64 half_life_ns = 1000000000ULL; // 1 second
+			u64 decay;
+			if (time_delta < half_life_ns) {
+				u64 ratio = (time_delta * 1000) / half_life_ns;
+				decay = 1000 - (ratio / 2);
+			} else {
+				u64 half_lives = time_delta / half_life_ns;
+				if (half_lives > 10) {
+					decay = 0;
+				} else {
+					decay = 1000 >> half_lives;
+				}
+			}
+			u64 decayed = ((u64)page_state->frequency * decay) / 1000;
+			frequency = (u32)(decayed + 1000);
+		} else {
+			frequency = page_state->frequency + 1000;
+		}
+	}
+
+	struct tracer_page_state new_page_state;
+	if (page_state) {
+		new_page_state.first_access_time = page_state->first_access_time;
+	} else {
+		new_page_state.first_access_time = timestamp;
+	}
+	new_page_state.last_access_time = timestamp;
+	new_page_state.last_file_offset = index;
+	new_page_state.file_size = file_size;
+	new_page_state.frequency = frequency;
+
+	bpf_map_update_elem(&per_folio_map, &folio_key, &new_page_state, BPF_ANY);
+
+	struct file_state new_file_state = {
+		.last_offset = index,
+		.last_access_time = timestamp,
+	};
+	bpf_map_update_elem(&per_file_map, &fkey, &new_file_state, BPF_ANY);
+
+	struct cache_access_fields fields = {
+		.timestamp = timestamp,
+		.time_delta = time_delta,
+		.major = (s_dev >> 20),
+		.minor = (s_dev & ((1U << 20) - 1)),
+		.ino = i_ino,
+		.offset = index,
+		.is_sequential = is_sequential ? 1 : 0,
+		.file_size = file_size,
+		.frequency = frequency,
+	};
+	send_access_log(&fields);
+}
+
+// track folio insertion
+static inline void track_folio_insertion(struct folio *folio) {
+	u64 timestamp = bpf_ktime_get_ns();
+	u64 folio_key = (u64)folio;
+	u64 index = folio->index;
+
+	u32 s_dev = get_folio_dev(folio);
+	u64 i_ino = get_folio_ino(folio);
+
+	if (s_dev == 0 || i_ino == 0) {
+		return;
+	}
+
+	struct file_key fkey = {
+		.dev = s_dev,
+		.ino = i_ino,
+	};
+
+	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
+
+	struct tracer_page_state new_page_state;
+	if (page_state) {
+		new_page_state.first_access_time = page_state->first_access_time;
+		new_page_state.frequency = page_state->frequency;
+		new_page_state.file_size = page_state->file_size;
+	} else {
+		new_page_state.first_access_time = timestamp;
+		new_page_state.frequency = 0;
+		new_page_state.file_size = 0;
+	}
+	new_page_state.last_access_time = timestamp;
+	new_page_state.last_file_offset = index;
+
+	bpf_map_update_elem(&per_folio_map, &folio_key, &new_page_state, BPF_ANY);
+
+	struct file_state new_file_state = {
+		.last_offset = index,
+		.last_access_time = timestamp,
+	};
+	bpf_map_update_elem(&per_file_map, &fkey, &new_file_state, BPF_ANY);
+
+	struct cache_insertion_event event = {
+		.timestamp = timestamp,
+		.major = (s_dev >> 20),
+		.minor = (s_dev & ((1U << 20) - 1)),
+		.ino = i_ino,
+		.index = index,
+	};
+	send_insertion_log(&event);
 }
 
 s32 BPF_STRUCT_OPS_SLEEPABLE(mglru_init, struct mem_cgroup *memcg)
@@ -874,6 +1132,7 @@ void BPF_STRUCT_OPS(mglru_folio_added, struct folio *folio)
 	if (!is_folio_relevant(folio)) {
 		return;
 	}
+	track_folio_insertion(folio);
 	lru_gen_add_folio(folio);
 }
 
@@ -882,6 +1141,7 @@ void BPF_STRUCT_OPS(mglru_folio_accessed, struct folio *folio)
 	if (!is_folio_relevant(folio)) {
 		return;
 	}
+	track_folio_access(folio);
 	folio_inc_refs(folio);
 }
 
@@ -910,70 +1170,7 @@ void BPF_STRUCT_OPS(mglru_folio_evicted, struct folio *folio)
 	update_nr_pages_stat(lrugen, metadata->gen, -folio_nr_pages(folio));
 
 	bpf_map_delete_elem(&folio_metadata_map, &key);
+
+	// Clean up per-folio tracking map
+	bpf_map_delete_elem(&per_folio_map, &key);
 }
-
-
-////////////
-// Logger //
-////////////
-
-struct {
-    __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 1 << 24);
-} rb_access SEC(".maps");
-
-struct {
-    __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 1 << 24);
-} rb_insertion SEC(".maps");
-
-struct cache_access_fields {
-    __u64 timestamp;        // a: bpf_ktime_get_ns()
-    __u64 time_delta;       // t: delta since last access (ns)
-    __u32 major;            // d: device major
-    __u32 minor;            // d: device minor
-    __u64 ino;              // i: inode number (i_ino)
-    __u64 offset;           // o: page index (folio index)
-    __u8  is_sequential;    // s: boolean (0 or 1)
-    __u64 file_size;        // z: file size
-    __u32 frequency;        // f: frequency
-};
-
-struct cache_insertion_event {
-    __u64 timestamp;   /* t: bpf_ktime_get_ns() */
-    __u32 major;       /* d: device major */
-    __u32 minor;       /* d: device minor */
-    __u64 ino;         /* i: inode number (data.i_ino) */
-    __u64 index;       /* x: page index (data.index) */
-};
-
-int send_access_log(struct cache_access_fields *fields) {
-    struct cache_access_fields *res_ptr = bpf_ringbuf_reserve(&rb_access, sizeof(*fields), 0);
-    if (res_ptr == NULL) {
-        return -1;
-    }
-
-    *res_ptr = *fields;
-    bpf_ringbuf_submit(res_ptr, 0);
-    return 0;
-}
-
-int send_insertion_log(struct cache_insertion_event *event) {
-    struct cache_insertion_event *res_ptr = bpf_ringbuf_reserve(&rb_insertion, sizeof(*event), 0);
-    if (res_ptr == NULL) {
-        return -1;
-    }
-
-    *res_ptr = *event;
-    bpf_ringbuf_submit(res_ptr, 0);
-    return 0;
-}
-
-SEC(".struct_ops.link")
-struct cache_ext_ops mglru_ops = {
-	.init = (void *)mglru_init,
-	.evict_folios = (void *)mglru_evict_folios,
-	.folio_accessed = (void *)mglru_folio_accessed,
-	.folio_evicted = (void *)mglru_folio_evicted,
-	.folio_added = (void *)mglru_folio_added,
-};

@@ -1,6 +1,7 @@
 #include <argp.h>
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
@@ -8,6 +9,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <syslog.h>
+#include <signal.h>
 
 #include "cache_ext_mglru_lc.skel.h"
 #include "dir_watcher.h"
@@ -99,6 +101,12 @@ static int handle_insertion(void *ctx, void *data, size_t len)
     return 0;
 }
 
+static volatile bool exiting = false;
+
+static void sig_handler(int sig)
+{
+	exiting = true;
+}
 
 int main(int argc, char **argv)
 {
@@ -106,6 +114,11 @@ int main(int argc, char **argv)
 	struct cache_ext_mglru_lc_bpf *skel = NULL;
 	struct bpf_link *link = NULL;
 	int cgroup_fd = -1;
+
+	// Set up signal handler
+	signal(SIGINT, sig_handler);
+	signal(SIGTERM, sig_handler);
+
 	libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
 	// Parse command line arguments
@@ -191,16 +204,47 @@ int main(int argc, char **argv)
 	}
 
 	rb_access = ring_buffer__new(bpf_map__fd(skel->maps.rb_access), handle_access, NULL, NULL);
-	rb_insertion = ring_buffer__new(bpf_map__fd(skel->maps.rb_insertion), handle_insertion, NULL, NULL);
+	if (!rb_access) {
+		perror("Failed to create ring buffer for access events");
+		goto cleanup;
+	}
 
-	// Wait for keyboard input
-	printf("Press any key to exit...\n");
-	getchar();
+	rb_insertion = ring_buffer__new(bpf_map__fd(skel->maps.rb_insertion), handle_insertion, NULL, NULL);
+	if (!rb_insertion) {
+		perror("Failed to create ring buffer for insertion events");
+		goto cleanup;
+	}
+
+	printf("Successfully attached. Logging to syslog. Press Ctrl+C to exit...\n");
+
+	while (!exiting) {
+		int err;
+
+		err = ring_buffer__poll(rb_access, 100);
+		if (err < 0 && err != -EINTR) {
+			fprintf(stderr, "Error polling access ring buffer: %d\n", err);
+			break;
+		}
+
+		err = ring_buffer__poll(rb_insertion, 100);
+		if (err < 0 && err != -EINTR) {
+			fprintf(stderr, "Error polling insertion ring buffer: %d\n", err);
+			break;
+		}
+	}
+
+	printf("\nExiting...\n");
+
 	ret = 0;
 
 cleanup:
+	if (rb_access)
+		ring_buffer__free(rb_access);
+	if (rb_insertion)
+		ring_buffer__free(rb_insertion);
 	close(cgroup_fd);
 	bpf_link__destroy(link);
 	cache_ext_mglru_lc_bpf__destroy(skel);
+	closelog();
 	return ret;
 }
