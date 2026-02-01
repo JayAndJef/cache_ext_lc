@@ -1174,3 +1174,12 @@ void BPF_STRUCT_OPS(mglru_folio_evicted, struct folio *folio)
 	// Clean up per-folio tracking map
 	bpf_map_delete_elem(&per_folio_map, &key);
 }
+
+SEC(".struct_ops.link")
+struct cache_ext_ops mglru_ops = {
+	.init = (void *)mglru_init,
+	.evict_folios = (void *)mglru_evict_folios,
+	.folio_accessed = (void *)mglru_folio_accessed,
+	.folio_evicted = (void *)mglru_folio_evicted,
+	.folio_added = (void *)mglru_folio_added,
+};
