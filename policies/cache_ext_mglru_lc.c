@@ -173,6 +173,7 @@ int main(int argc, char **argv)
 
 	// enable syslog
 	openlog(program_name, getpid(), LOG_USER);
+	syslog(LOG_INFO, "tracer: Starting cache_ext_mglru_lc");
 
 	// Set watch_dir
 	skel->rodata->watch_dir_path_len = strlen(watch_dir_full_path);
