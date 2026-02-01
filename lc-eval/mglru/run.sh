@@ -9,7 +9,7 @@ if ! uname -r | grep -q "cache-ext"; then
 fi
 
 SCRIPT_PATH=$(realpath $0)
-BASE_DIR=$(realpath "$(dirname $SCRIPT_PATH)/../")
+BASE_DIR=$(realpath "$(dirname $SCRIPT_PATH)/../../")
 BENCH_PATH="$BASE_DIR/lc-bench"
 POLICY_PATH="$BASE_DIR/policies"
 WATCH_DIR=$(realpath "$BASE_DIR/linux")
