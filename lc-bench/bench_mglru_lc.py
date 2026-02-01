@@ -35,7 +35,7 @@ class MGLRULCBenchmark(BenchmarkFramework):
         parser.add_argument(
             "--filebench-workload",
             type=str,
-            required=False,
+            required=True,
             help="Specify the path to the filebench workload file",
         )
 
@@ -72,17 +72,15 @@ class MGLRULCBenchmark(BenchmarkFramework):
         self.start_time = time()
 
     def benchmark_cmd(self, config):
-        # If filebench workload is specified, use it
-        if self.args.filebench_workload:
-            cmd = [
-                "sudo",
-                "cgexec",
-                "-g",
-                "memory:%s" % config["cgroup_name"],
-                "filebench",
-                "-f",
-                self.args.filebench_workload,
-            ]
+        cmd = [
+            "sudo",
+            "cgexec",
+            "-g",
+            "memory:%s" % config["cgroup_name"],
+            "filebench",
+            "-f",
+            self.args.filebench_workload,
+        ]
         return cmd
 
     def after_benchmark(self, config):
