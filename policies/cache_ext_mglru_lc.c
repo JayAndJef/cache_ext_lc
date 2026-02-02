@@ -173,7 +173,7 @@ int main(int argc, char **argv)
 	}
 
 	// enable syslog
-	openlog(program_name, LOG_CONS | LOG_PERROR, LOG_USER);
+	openlog(program_name, LOG_CONS, LOG_USER);
 	fprintf(stderr, "started syslog");
 	syslog(LOG_INFO, "tracer: Starting cache_ext_mglru_lc");
 
