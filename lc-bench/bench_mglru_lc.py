@@ -90,6 +90,9 @@ class MGLRULCBenchmark(BenchmarkFramework):
             "-f",
             self.args.filebench_workload,
         ]
+
+        log.info("Executing benchmark command: %s", " ".join(cmd))
+
         return cmd
 
     def after_benchmark(self, config):

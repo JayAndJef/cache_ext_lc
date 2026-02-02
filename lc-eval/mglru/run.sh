@@ -26,7 +26,7 @@ SCRIPT_PATH=$(realpath $0)
 BASE_DIR=$(realpath "$(dirname $SCRIPT_PATH)/../../")
 BENCH_PATH="$BASE_DIR/lc-bench"
 POLICY_PATH="$BASE_DIR/policies"
-WATCH_DIR="/tmp"
+WATCH_DIR="/tmp" # must match filebench workload directory
 RESULTS_PATH="$BASE_DIR/results"
 
 ITERATIONS=3
