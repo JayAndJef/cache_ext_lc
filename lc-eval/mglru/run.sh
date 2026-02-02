@@ -47,7 +47,8 @@ python3 "$BENCH_PATH/bench_mglru_lc.py" \
 	--results-file "$RESULTS_PATH/mglru_lc_results.json" \
 	--watch-dir "$WATCH_DIR" \
 	--filebench-workload "$WORKLOAD_FILE" \
-	--iterations "$ITERATIONS"
+	--iterations "$ITERATIONS" \
+	--ext-only
 
 echo "MGLRU-LC trace collection completed."
 echo "Results saved to $RESULTS_PATH/mglru_lc_results.json"
