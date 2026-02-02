@@ -5,26 +5,29 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
-#include <sys/syslog.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <syslog.h>
 #include <signal.h>
+#include <time.h>
 
 #include "cache_ext_mglru_lc.skel.h"
 #include "dir_watcher.h"
 
-char *USAGE = "Usage: ./cache_ext_mglru --watch_dir <dir> --cgroup_path <path>\n";
+char *USAGE = "Usage: ./cache_ext_mglru --watch_dir <dir> --cgroup_path <path> [--log_dir <dir>]\n";
 struct cmdline_args {
 	char *watch_dir;
 	char *cgroup_path;
+	char *log_dir;
 };
 
 static struct argp_option options[] = { { "watch_dir", 'w', "DIR", 0,
 					  "Directory to watch" },
 					{ "cgroup_path", 'c', "PATH", 0,
 					  "Path to cgroup (e.g., /sys/fs/cgroup/cache_ext_test)" },
+					{ "log_dir", 'l', "DIR", 0,
+					  "Directory for log files (default: /var/log/cache_ext)" },
 					{ 0 } };
 
 static error_t parse_opt(int key, char *arg, struct argp_state *state)
@@ -37,16 +40,25 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 	case 'c':
 		args->cgroup_path = arg;
 		break;
+	case 'l':
+		args->log_dir = arg;
+		break;
 	default:
 		return ARGP_ERR_UNKNOWN;
 	}
 	return 0;
 }
 
-static const char *program_name = "";
-
 struct ring_buffer *rb_access = NULL;
 struct ring_buffer *rb_insertion = NULL;
+
+// File descriptors for binary log files
+static int access_log_fd = -1;
+static int insertion_log_fd = -1;
+
+// Statistics counters
+static uint64_t access_count = 0;
+static uint64_t insertion_count = 0;
 
 struct cache_access_fields {
     uint64_t timestamp;      // a: bpf_ktime_get_ns()
@@ -71,34 +83,32 @@ struct cache_insertion_event {
 static int handle_access(void *ctx, void *data, size_t len)
 {
     struct cache_access_fields *access_event = data;
-    syslog(
-        LOG_INFO,
-        "tracer-cache-access: a=%lu t=%lu d=%u:%u i=%lu o=%lu s=%u z=%lu f=%u\n",
-        access_event->timestamp,
-        access_event->time_delta,
-        access_event->major,
-        access_event->minor,
-        access_event->ino,
-        access_event->offset,
-        access_event->is_sequential ? 1 : 0,
-        access_event->file_size,
-        access_event->frequency
-    );
+
+    if (access_log_fd >= 0) {
+        ssize_t written = write(access_log_fd, access_event, sizeof(*access_event));
+        if (written != sizeof(*access_event)) {
+            fprintf(stderr, "Failed to write access event: %s\n", strerror(errno));
+        } else {
+            access_count++;
+        }
+    }
+
     return 0;
 }
 
 static int handle_insertion(void *ctx, void *data, size_t len)
 {
     struct cache_insertion_event *insertion_event = data;
-    syslog(
-        LOG_INFO,
-        "tracer-cache-insertion: t=%lu d=%u:%u i=%lu x=%lu\n",
-        insertion_event->timestamp,
-        insertion_event->major,
-        insertion_event->minor,
-        insertion_event->ino,
-        insertion_event->index
-    );
+
+    if (insertion_log_fd >= 0) {
+        ssize_t written = write(insertion_log_fd, insertion_event, sizeof(*insertion_event));
+        if (written != sizeof(*insertion_event)) {
+            fprintf(stderr, "Failed to write insertion event: %s\n", strerror(errno));
+        } else {
+            insertion_count++;
+        }
+    }
+
     return 0;
 }
 
@@ -107,6 +117,26 @@ static volatile bool exiting = false;
 static void sig_handler(int sig)
 {
 	exiting = true;
+}
+
+static int open_log_file(const char *log_dir, const char *filename)
+{
+	char filepath[PATH_MAX];
+	time_t now = time(NULL);
+	struct tm *tm_info = localtime(&now);
+	char timestamp[64];
+
+	strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", tm_info);
+	snprintf(filepath, sizeof(filepath), "%s/%s_%s.bin", log_dir, filename, timestamp);
+
+	int fd = open(filepath, O_WRONLY | O_CREAT | O_APPEND, 0644);
+	if (fd < 0) {
+		fprintf(stderr, "Failed to open log file %s: %s\n", filepath, strerror(errno));
+		return -1;
+	}
+
+	printf("Logging to: %s\n", filepath);
+	return fd;
 }
 
 int main(int argc, char **argv)
@@ -138,6 +168,21 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	// Set default log directory if not specified
+	if (args.log_dir == NULL) {
+		args.log_dir = "/var/log/cache_ext";
+	}
+
+	// Create log directory if it doesn't exist
+	struct stat st = {0};
+	if (stat(args.log_dir, &st) == -1) {
+		if (mkdir(args.log_dir, 0755) == -1) {
+			fprintf(stderr, "Failed to create log directory %s: %s\n",
+				args.log_dir, strerror(errno));
+			return 1;
+		}
+	}
+
 	// Does watch_dir exist?
 	if (access(args.watch_dir, F_OK) == -1) {
 		fprintf(stderr, "Directory does not exist: %s\n",
@@ -165,6 +210,19 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	// Open log files
+	access_log_fd = open_log_file(args.log_dir, "cache_access");
+	if (access_log_fd < 0) {
+		fprintf(stderr, "Failed to open access log file\n");
+		goto cleanup;
+	}
+
+	insertion_log_fd = open_log_file(args.log_dir, "cache_insertion");
+	if (insertion_log_fd < 0) {
+		fprintf(stderr, "Failed to open insertion log file\n");
+		goto cleanup;
+	}
+
 	// Open skel
 	skel = cache_ext_mglru_lc_bpf__open();
 	if (skel == NULL) {
@@ -172,10 +230,7 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	// enable syslog
-	openlog(program_name, LOG_CONS, LOG_USER);
-	fprintf(stderr, "started syslog");
-	syslog(LOG_INFO, "tracer: Starting cache_ext_mglru_lc");
+	printf("Starting cache_ext_mglru_lc\n");
 
 	// Set watch_dir
 	skel->rodata->watch_dir_path_len = strlen(watch_dir_full_path);
@@ -218,8 +273,9 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	printf("Successfully attached. Logging to syslog. Press Ctrl+C to exit...\n");
+	printf("Successfully attached. Logging to binary files. Press Ctrl+C to exit...\n");
 
+	time_t last_stats_time = time(NULL);
 	while (!exiting) {
 		int err;
 
@@ -234,9 +290,19 @@ int main(int argc, char **argv)
 			fprintf(stderr, "Error polling insertion ring buffer: %d\n", err);
 			break;
 		}
+
+		// Print statistics every 10 seconds
+		time_t now = time(NULL);
+		if (now - last_stats_time >= 10) {
+			printf("Stats: %lu access events, %lu insertion events\n",
+			       access_count, insertion_count);
+			last_stats_time = now;
+		}
 	}
 
 	printf("\nExiting...\n");
+	printf("Final stats: %lu access events, %lu insertion events\n",
+	       access_count, insertion_count);
 
 	ret = 0;
 
@@ -245,9 +311,17 @@ cleanup:
 		ring_buffer__free(rb_access);
 	if (rb_insertion)
 		ring_buffer__free(rb_insertion);
-	close(cgroup_fd);
+	if (access_log_fd >= 0) {
+		fsync(access_log_fd);
+		close(access_log_fd);
+	}
+	if (insertion_log_fd >= 0) {
+		fsync(insertion_log_fd);
+		close(insertion_log_fd);
+	}
+	if (cgroup_fd >= 0)
+		close(cgroup_fd);
 	bpf_link__destroy(link);
 	cache_ext_mglru_lc_bpf__destroy(skel);
-	closelog();
 	return ret;
 }
