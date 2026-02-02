@@ -38,6 +38,12 @@ class MGLRULCBenchmark(BenchmarkFramework):
             required=True,
             help="Specify the path to the filebench workload file",
         )
+        parser.add_argument(
+            "--ext-only",
+            action="store_true",
+            default=False,
+            help="Run only the cache_ext policy. Useful for data collection. Will be overriden if --default-only is specified",
+        )
 
     def generate_configs(self, configs: List[Dict]) -> List[Dict]:
         configs = add_config_option("passes", [10], configs)
@@ -46,7 +52,10 @@ class MGLRULCBenchmark(BenchmarkFramework):
             configs = add_config_option(
                 "cgroup_name", [DEFAULT_BASELINE_CGROUP], configs
             )
-
+        elif self.args.ext_only:
+            configs = add_config_option(
+                "cgroup_name", [DEFAULT_CACHE_EXT_CGROUP], configs
+            )
         else:
             configs = add_config_option(
                 "cgroup_name",
