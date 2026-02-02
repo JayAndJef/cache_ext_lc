@@ -52,7 +52,7 @@ class CacheExtPolicy:
 
         log.info("Starting policy thread: %s", cmd)
         self._policy_thread = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            cmd,
         )
         sleep(10)
 
