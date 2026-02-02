@@ -73,7 +73,7 @@ static int handle_access(void *ctx, void *data, size_t len)
     struct cache_access_fields *access_event = data;
     syslog(
         LOG_INFO,
-        "tracer_cache_access: a=%lu t=%lu d=%u:%u i=%lu o=%lu s=%u z=%lu f=%u\n",
+        "tracer-cache-access: a=%lu t=%lu d=%u:%u i=%lu o=%lu s=%u z=%lu f=%u\n",
         access_event->timestamp,
         access_event->time_delta,
         access_event->major,
@@ -92,7 +92,7 @@ static int handle_insertion(void *ctx, void *data, size_t len)
     struct cache_insertion_event *insertion_event = data;
     syslog(
         LOG_INFO,
-        "tracer_cache_insertion: t=%lu d=%u:%u i=%lu x=%lu\n",
+        "tracer-cache-insertion: t=%lu d=%u:%u i=%lu x=%lu\n",
         insertion_event->timestamp,
         insertion_event->major,
         insertion_event->minor,
