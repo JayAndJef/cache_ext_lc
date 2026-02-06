@@ -1168,9 +1168,6 @@ void BPF_STRUCT_OPS(mglru_folio_evicted, struct folio *folio)
 	// Update generation page count
 	update_evicted_stat(lrugen, tier, 1);
 	update_nr_pages_stat(lrugen, metadata->gen, -folio_nr_pages(folio));
-
-	bpf_map_delete_elem(&folio_metadata_map, &key);
-
 }
 
 SEC(".struct_ops.link")
