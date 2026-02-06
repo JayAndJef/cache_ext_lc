@@ -26,6 +26,7 @@ Binary format for cache_insertion events (32 bytes):
 import struct
 import sys
 import argparse
+import csv
 from pathlib import Path
 
 
@@ -48,10 +49,17 @@ class CacheAccessEvent:
         self.file_size = unpacked[7]
         self.frequency = unpacked[8]
     
-    def __str__(self):
-        return (f"a={self.timestamp} t={self.time_delta} d={self.major}:{self.minor} "
-                f"i={self.ino} o={self.offset} s={1 if self.is_sequential else 0} "
-                f"z={self.file_size} f={self.frequency}")
+    def to_csv_row(self):
+        """Return data as a dictionary for CSV output matching parsing.ipynb format."""
+        return {
+            't': self.time_delta,
+            'd': f"{self.major}:{self.minor}",
+            'i': self.ino,
+            'o': self.offset,
+            's': 1 if self.is_sequential else 0,
+            'z': self.file_size,
+            'f': self.frequency
+        }
 
 
 class CacheInsertionEvent:
@@ -66,66 +74,79 @@ class CacheInsertionEvent:
         self.ino = unpacked[3]
         self.index = unpacked[4]
     
-    def __str__(self):
-        return (f"t={self.timestamp} d={self.major}:{self.minor} "
-                f"i={self.ino} x={self.index}")
+    def to_csv_row(self):
+        """Return data as a dictionary for CSV output."""
+        return {
+            't': self.timestamp,
+            'd': f"{self.major}:{self.minor}",
+            'i': self.ino,
+            'x': self.index
+        }
 
 
 def read_access_log(filepath, limit=None):
-    """Read and parse cache access log file."""
+    """Read and parse cache access log file and output as CSV."""
     count = 0
+    fieldnames = ['t', 'd', 'i', 'o', 's', 'z', 'f']
+    writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)
+    writer.writeheader()
+
     with open(filepath, 'rb') as f:
         while True:
             data = f.read(CacheAccessEvent.SIZE)
             if not data:
                 break
             if len(data) < CacheAccessEvent.SIZE:
-                print(f"Warning: Incomplete record at end of file ({len(data)} bytes)", 
+                print(f"Warning: Incomplete record at end of file ({len(data)} bytes)",
                       file=sys.stderr)
                 break
-            
+
             event = CacheAccessEvent(data)
-            print(f"tracer-cache-access: {event}")
+            writer.writerow(event.to_csv_row())
             count += 1
-            
+
             if limit and count >= limit:
                 break
-    
+
     return count
 
 
 def read_insertion_log(filepath, limit=None):
-    """Read and parse cache insertion log file."""
+    """Read and parse cache insertion log file and output as CSV."""
     count = 0
+    fieldnames = ['t', 'd', 'i', 'x']
+    writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)
+    writer.writeheader()
+
     with open(filepath, 'rb') as f:
         while True:
             data = f.read(CacheInsertionEvent.SIZE)
             if not data:
                 break
             if len(data) < CacheInsertionEvent.SIZE:
-                print(f"Warning: Incomplete record at end of file ({len(data)} bytes)", 
+                print(f"Warning: Incomplete record at end of file ({len(data)} bytes)",
                       file=sys.stderr)
                 break
-            
+
             event = CacheInsertionEvent(data)
-            print(f"tracer-cache-insertion: {event}")
+            writer.writerow(event.to_csv_row())
             count += 1
-            
+
             if limit and count >= limit:
                 break
-    
+
     return count
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Read binary cache trace logs')
+    parser = argparse.ArgumentParser(description='Read binary cache trace logs and output CSV')
     parser.add_argument('logfile', help='Path to binary log file')
-    parser.add_argument('--type', choices=['access', 'insertion'], 
+    parser.add_argument('--type', choices=['access', 'insertion'],
                         help='Type of log file (auto-detected from filename if not specified)')
     parser.add_argument('--limit', type=int, help='Maximum number of records to read')
-    parser.add_argument('--stats-only', action='store_true', 
+    parser.add_argument('--stats-only', action='store_true',
                         help='Only show statistics, not individual records')
-    
+
     args = parser.parse_args()
     
     # Auto-detect type from filename
