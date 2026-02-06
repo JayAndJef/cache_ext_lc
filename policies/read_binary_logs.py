@@ -50,8 +50,11 @@ class CacheAccessEvent:
         self.frequency = unpacked[8]
     
     def to_csv_row(self):
-        """Return data as a dictionary for CSV output matching parsing.ipynb format."""
+        """Return data as a dictionary for CSV output matching parsing.ipynb format.
+        Fields: a=timestamp, t=time_delta, d=device, i=inode, o=offset, s=sequential, z=size, f=frequency
+        """
         return {
+            'a': self.timestamp,
             't': self.time_delta,
             'd': f"{self.major}:{self.minor}",
             'i': self.ino,
@@ -87,7 +90,7 @@ class CacheInsertionEvent:
 def read_access_log(filepath, limit=None):
     """Read and parse cache access log file and output as CSV."""
     count = 0
-    fieldnames = ['t', 'd', 'i', 'o', 's', 'z', 'f']
+    fieldnames = ['a', 't', 'd', 'i', 'o', 's', 'z', 'f']
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)
     writer.writeheader()
 
