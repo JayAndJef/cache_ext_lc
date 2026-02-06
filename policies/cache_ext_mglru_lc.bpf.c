@@ -1171,8 +1171,6 @@ void BPF_STRUCT_OPS(mglru_folio_evicted, struct folio *folio)
 
 	bpf_map_delete_elem(&folio_metadata_map, &key);
 
-	// Clean up per-folio tracking map
-	bpf_map_delete_elem(&per_folio_map, &key);
 }
 
 SEC(".struct_ops.link")
