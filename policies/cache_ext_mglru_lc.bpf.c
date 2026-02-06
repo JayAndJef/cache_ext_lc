@@ -662,6 +662,12 @@ struct {
 	__type(value, struct eviction_metadata);
 } mglru_percpu_array SEC(".maps");
 
+struct tracer_page_key {
+	__u32 dev;
+	__u64 ino;
+	__u64 offset;
+};
+
 // Per-folio tracking structures (ported from Rust tracers)
 struct tracer_page_state {
 	__u64 first_access_time;
@@ -681,11 +687,11 @@ struct file_state {
 	__u64 last_access_time;
 };
 
-// Per-folio map: key is folio pointer
+// Per-folio map: key is dev ino index for tracking across eviction
 struct {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
 	__uint(max_entries, 8000000);
-	__type(key, u64);
+	__type(key, struct tracer_page_key);
 	__type(value, struct tracer_page_state);
 } per_folio_map SEC(".maps");
 
@@ -807,13 +813,17 @@ static inline u64 get_folio_file_size(struct folio *folio) {
 }
 
 static inline void track_folio_access(struct folio *folio) {
-	u64 timestamp = bpf_ktime_get_ns();
-	u64 folio_key = (u64)folio;
-	u64 index = folio->index;
-
 	u32 s_dev = get_folio_dev(folio);
 	u64 i_ino = get_folio_ino(folio);
 	u64 file_size = get_folio_file_size(folio);
+   	u64 index = folio->index;
+    u64 timestamp = bpf_ktime_get_ns();
+
+	struct tracer_page_key folio_key = {
+        .dev = s_dev,
+        .ino = i_ino,
+        .offset = index
+    };
 
 	if (s_dev == 0 || i_ino == 0) {
 		return;
@@ -900,12 +910,16 @@ static inline void track_folio_access(struct folio *folio) {
 
 // track folio insertion
 static inline void track_folio_insertion(struct folio *folio) {
-	u64 timestamp = bpf_ktime_get_ns();
-	u64 folio_key = (u64)folio;
-	u64 index = folio->index;
-
-	u32 s_dev = get_folio_dev(folio);
+   	u32 s_dev = get_folio_dev(folio);
 	u64 i_ino = get_folio_ino(folio);
+	u64 index = folio->index;
+    u64 timestamp = bpf_ktime_get_ns();
+
+    struct tracer_page_key folio_key = {
+        .dev = s_dev,
+        .ino = i_ino,
+        .offset = index
+    };
 
 	if (s_dev == 0 || i_ino == 0) {
 		return;
