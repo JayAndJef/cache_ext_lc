@@ -844,27 +844,35 @@ static inline void track_folio_access(struct folio *folio) {
 	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
 	struct file_state *file_state = bpf_map_lookup_elem(&per_file_map, &fkey);
 
-	u64 page_time_delta = 0;
-	u64 page_time_delta2 = 0;
+	u64 page_time_delta = 0xffffffffffffffffULL;
+	u64 page_time_delta2 = 0xffffffffffffffffULL;
+	bool has_page_delta = false;
+	bool has_page_delta2 = false;
 	if (page_state) {
 		if (timestamp >= page_state->last_access_time) {
 			page_time_delta = timestamp - page_state->last_access_time;
+			has_page_delta = true;
 		}
 		if (page_state->prev_access_time &&
 		    timestamp >= page_state->prev_access_time) {
 			page_time_delta2 = timestamp - page_state->prev_access_time;
+			has_page_delta2 = true;
 		}
 	}
 
-	u64 inode_time_delta = 0;
-	u64 inode_time_delta2 = 0;
+	u64 inode_time_delta = 0xffffffffffffffffULL;
+	u64 inode_time_delta2 = 0xffffffffffffffffULL;
+	bool has_inode_delta = false;
+	bool has_inode_delta2 = false;
 	if (file_state) {
 		if (timestamp >= file_state->last_access_time) {
 			inode_time_delta = timestamp - file_state->last_access_time;
+			has_inode_delta = true;
 		}
 		if (file_state->prev_access_time &&
 		    timestamp >= file_state->prev_access_time) {
 			inode_time_delta2 = timestamp - file_state->prev_access_time;
+			has_inode_delta2 = true;
 		}
 	}
 
@@ -883,7 +891,9 @@ static inline void track_folio_access(struct folio *folio) {
 	u32 inode_hotness_ema = 1000;
 	if (file_state) {
 		u64 half_life_ns = 1000000000ULL; // 1 second
-		if (inode_time_delta == 0) {
+		if (!has_inode_delta) {
+			inode_hotness_ema = file_state->hotness_ema;
+		} else if (inode_time_delta == 0) {
 			inode_hotness_ema = file_state->hotness_ema + 1000;
 		} else {
 			u64 decay;
@@ -905,7 +915,7 @@ static inline void track_folio_access(struct folio *folio) {
 
 	u32 frequency = 1000;
 	if (page_state) {
-		if (page_time_delta > 0) {
+		if (has_page_delta && page_time_delta > 0) {
 			u64 half_life_ns = 1000000000ULL; // 1 second
 			u64 decay;
 			if (page_time_delta < half_life_ns) {
@@ -921,7 +931,7 @@ static inline void track_folio_access(struct folio *folio) {
 			}
 			u64 decayed = ((u64)page_state->frequency * decay) / 1000;
 			frequency = (u32)(decayed + 1000);
-		} else {
+		} else if (has_page_delta) {
 			frequency = page_state->frequency + 1000;
 		}
 	}
