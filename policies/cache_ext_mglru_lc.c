@@ -61,15 +61,19 @@ static uint64_t access_count = 0;
 static uint64_t insertion_count = 0;
 
 struct cache_access_fields {
-    uint64_t timestamp;      // a: bpf_ktime_get_ns()
-    uint64_t time_delta;     // t: delta since last access (ns)
-    uint32_t major;          // d: device major
-    uint32_t minor;          // d: device minor
-    uint64_t ino;            // i: inode number (i_ino)
-    uint64_t offset;         // o: page index (folio index)
-    bool is_sequential;  // s: boolean (0 or 1)
-    uint64_t file_size;      // z: file size
-    uint32_t frequency;      // f: frequency
+    uint64_t timestamp;        // ts: bpf_ktime_get_ns()
+    uint64_t page_time_delta;  // pd: delta since last page access (ns)
+    uint64_t page_time_delta2; // p2: delta since last two page access (ns)
+    uint64_t inode_time_delta; // id: delta since last inode access (ns)
+    uint64_t inode_time_delta2;// i2: delta since last two inode access (ns)
+    uint32_t major;            // dm: device major
+    uint32_t minor;            // dn: device minor
+    uint64_t ino;              // in: inode number (i_ino)
+    uint64_t offset;           // of: page index (folio index)
+    uint32_t seq_distance;     // sd: pages away from last inode offset
+    uint64_t file_size;        // sz: file size
+    uint32_t frequency;        // fq: frequency
+    uint32_t inode_hotness_ema;// ie: inode hotness EMA
 };
 
 struct cache_insertion_event {

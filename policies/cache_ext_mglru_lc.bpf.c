@@ -671,6 +671,7 @@ struct tracer_page_key {
 // Per-folio tracking structures (ported from Rust tracers)
 struct tracer_page_state {
 	__u64 first_access_time;
+	__u64 prev_access_time;
 	__u64 last_access_time;
 	__u64 last_file_offset;
 	__u64 file_size;
@@ -684,7 +685,9 @@ struct file_key {
 
 struct file_state {
 	__u64 last_offset;
+	__u64 prev_access_time;
 	__u64 last_access_time;
+	__u32 hotness_ema;
 };
 
 // Per-folio map: key is dev ino index for tracking across eviction
@@ -753,15 +756,19 @@ struct {
 } rb_insertion SEC(".maps");
 
 struct cache_access_fields {
-    __u64 timestamp;        // a: bpf_ktime_get_ns()
-    __u64 time_delta;       // t: delta since last access (ns)
-    __u32 major;            // d: device major
-    __u32 minor;            // d: device minor
-    __u64 ino;              // i: inode number (i_ino)
-    __u64 offset;           // o: page index (folio index)
-    __u8  is_sequential;    // s: boolean (0 or 1)
-    __u64 file_size;        // z: file size
-    __u32 frequency;        // f: frequency
+    __u64 timestamp;        // ts: bpf_ktime_get_ns()
+    __u64 page_time_delta;  // pd: delta since last page access (ns)
+    __u64 page_time_delta2; // p2: delta since last two page access (ns)
+    __u64 inode_time_delta; // id: delta since last inode access (ns)
+    __u64 inode_time_delta2;// i2: delta since last two inode access (ns)
+    __u32 major;            // dm: device major
+    __u32 minor;            // dn: device minor
+    __u64 ino;              // in: inode number (i_ino)
+    __u64 offset;           // of: page index (folio index)
+    __u32 seq_distance;     // sd: pages away from last inode offset
+    __u64 file_size;        // sz: file size
+    __u32 frequency;        // fq: frequency
+    __u32 inode_hotness_ema;// ie: inode hotness EMA
 };
 
 struct cache_insertion_event {
@@ -837,31 +844,75 @@ static inline void track_folio_access(struct folio *folio) {
 	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
 	struct file_state *file_state = bpf_map_lookup_elem(&per_file_map, &fkey);
 
-	u64 time_delta = 0;
+	u64 page_time_delta = 0;
+	u64 page_time_delta2 = 0;
 	if (page_state) {
 		if (timestamp >= page_state->last_access_time) {
-			time_delta = timestamp - page_state->last_access_time;
+			page_time_delta = timestamp - page_state->last_access_time;
+		}
+		if (page_state->prev_access_time &&
+		    timestamp >= page_state->prev_access_time) {
+			page_time_delta2 = timestamp - page_state->prev_access_time;
 		}
 	}
 
-	bool is_sequential = false;
+	u64 inode_time_delta = 0;
+	u64 inode_time_delta2 = 0;
+	if (file_state) {
+		if (timestamp >= file_state->last_access_time) {
+			inode_time_delta = timestamp - file_state->last_access_time;
+		}
+		if (file_state->prev_access_time &&
+		    timestamp >= file_state->prev_access_time) {
+			inode_time_delta2 = timestamp - file_state->prev_access_time;
+		}
+	}
+
+	u32 seq_distance = 0;
 	if (file_state) {
 		u64 offset_diff = index > file_state->last_offset ?
 			index - file_state->last_offset :
 			file_state->last_offset - index;
-		is_sequential = (offset_diff > 0 && offset_diff <= 64);
+		if (offset_diff > 0xffffffffU) {
+			seq_distance = 0xffffffffU;
+		} else {
+			seq_distance = (u32)offset_diff;
+		}
+	}
+
+	u32 inode_hotness_ema = 1000;
+	if (file_state) {
+		u64 half_life_ns = 1000000000ULL; // 1 second
+		if (inode_time_delta == 0) {
+			inode_hotness_ema = file_state->hotness_ema + 1000;
+		} else {
+			u64 decay;
+			if (inode_time_delta < half_life_ns) {
+				u64 ratio = (inode_time_delta * 1000) / half_life_ns;
+				decay = 1000 - (ratio / 2);
+			} else {
+				u64 half_lives = inode_time_delta / half_life_ns;
+				if (half_lives > 10) {
+					decay = 0;
+				} else {
+					decay = 1000 >> half_lives;
+				}
+			}
+			u64 decayed = ((u64)file_state->hotness_ema * decay) / 1000;
+			inode_hotness_ema = (u32)(decayed + 1000);
+		}
 	}
 
 	u32 frequency = 1000;
 	if (page_state) {
-		if (time_delta > 0) {
+		if (page_time_delta > 0) {
 			u64 half_life_ns = 1000000000ULL; // 1 second
 			u64 decay;
-			if (time_delta < half_life_ns) {
-				u64 ratio = (time_delta * 1000) / half_life_ns;
+			if (page_time_delta < half_life_ns) {
+				u64 ratio = (page_time_delta * 1000) / half_life_ns;
 				decay = 1000 - (ratio / 2);
 			} else {
-				u64 half_lives = time_delta / half_life_ns;
+				u64 half_lives = page_time_delta / half_life_ns;
 				if (half_lives > 10) {
 					decay = 0;
 				} else {
@@ -878,8 +929,10 @@ static inline void track_folio_access(struct folio *folio) {
 	struct tracer_page_state new_page_state;
 	if (page_state) {
 		new_page_state.first_access_time = page_state->first_access_time;
+		new_page_state.prev_access_time = page_state->last_access_time;
 	} else {
 		new_page_state.first_access_time = timestamp;
+		new_page_state.prev_access_time = 0;
 	}
 	new_page_state.last_access_time = timestamp;
 	new_page_state.last_file_offset = index;
@@ -890,20 +943,26 @@ static inline void track_folio_access(struct folio *folio) {
 
 	struct file_state new_file_state = {
 		.last_offset = index,
+		.prev_access_time = file_state ? file_state->last_access_time : 0,
 		.last_access_time = timestamp,
+		.hotness_ema = inode_hotness_ema,
 	};
 	bpf_map_update_elem(&per_file_map, &fkey, &new_file_state, BPF_ANY);
 
 	struct cache_access_fields fields = {
 		.timestamp = timestamp,
-		.time_delta = time_delta,
+		.page_time_delta = page_time_delta,
+		.page_time_delta2 = page_time_delta2,
+		.inode_time_delta = inode_time_delta,
+		.inode_time_delta2 = inode_time_delta2,
 		.major = (s_dev >> 20),
 		.minor = (s_dev & ((1U << 20) - 1)),
 		.ino = i_ino,
 		.offset = index,
-		.is_sequential = is_sequential ? 1 : 0,
+		.seq_distance = seq_distance,
 		.file_size = file_size,
 		.frequency = frequency,
+		.inode_hotness_ema = inode_hotness_ema,
 	};
 	send_access_log(&fields);
 }
@@ -931,14 +990,17 @@ static inline void track_folio_insertion(struct folio *folio) {
 	};
 
 	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
+	struct file_state *file_state = bpf_map_lookup_elem(&per_file_map, &fkey);
 
 	struct tracer_page_state new_page_state;
 	if (page_state) {
 		new_page_state.first_access_time = page_state->first_access_time;
+		new_page_state.prev_access_time = page_state->last_access_time;
 		new_page_state.frequency = page_state->frequency;
 		new_page_state.file_size = page_state->file_size;
 	} else {
 		new_page_state.first_access_time = timestamp;
+		new_page_state.prev_access_time = 0;
 		new_page_state.frequency = 0;
 		new_page_state.file_size = 0;
 	}
@@ -949,7 +1011,9 @@ static inline void track_folio_insertion(struct folio *folio) {
 
 	struct file_state new_file_state = {
 		.last_offset = index,
+		.prev_access_time = file_state ? file_state->last_access_time : 0,
 		.last_access_time = timestamp,
+		.hotness_ema = file_state ? file_state->hotness_ema : 0,
 	};
 	bpf_map_update_elem(&per_file_map, &fkey, &new_file_state, BPF_ANY);
 
