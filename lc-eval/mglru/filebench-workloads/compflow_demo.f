@@ -74,3 +74,4 @@ define process name=filereader1,instances=1
 }
 
 echo  "CompFlow_Demo Version 1.1 personality successfully loaded"
+run 60

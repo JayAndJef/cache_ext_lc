@@ -72,3 +72,4 @@ define process name=netclient,instances=1
 }
 
 echo  "NetworkServer Version 1.1 personality successfully loaded"
+run 60

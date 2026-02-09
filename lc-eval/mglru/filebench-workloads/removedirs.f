@@ -42,3 +42,4 @@ define process name=remdir,instances=1
 }
 
 echo  "RemoveDir Version 1.0 personality successfully loaded"
+run 60

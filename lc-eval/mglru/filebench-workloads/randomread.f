@@ -41,3 +41,4 @@ define process name=rand-read,instances=1
 }
 
 echo "Random Read Version 3.0 personality successfully loaded"
+run 60

@@ -38,3 +38,4 @@ define process name=seqwrite,instances=1
 }
 
 echo  "Single Stream Write Version 3.0 personality successfully loaded"
+run 60

@@ -254,3 +254,4 @@ define process name=shadow,instances=$nshadows
 }
 
 echo "Tpcso Version 2.1 personality successfully loaded"
+run 60

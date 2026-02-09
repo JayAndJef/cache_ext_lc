@@ -59,3 +59,4 @@ define process name=seqwrite,instances=1
 }
 
 echo  "Five Stream Direct Write Version 3.0 personality successfully loaded"
+run 60
