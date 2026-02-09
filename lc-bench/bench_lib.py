@@ -71,8 +71,7 @@ class CacheExtPolicy:
 
         if self._policy_thread.poll() is None:
             cmd = ["sudo", "kill", "-2", str(self._policy_thread.pid)]
-            with suppress(subprocess.CalledProcessError):
-                run(cmd)
+            run(cmd)
 
         out, err = self._policy_thread.communicate()
 

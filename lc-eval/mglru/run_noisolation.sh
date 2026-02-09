@@ -52,4 +52,3 @@ python3 "$BENCH_PATH/bench_mglru_lc.py" \
 
 echo "MGLRU-LC trace collection completed."
 echo "Results saved to $RESULTS_PATH/mglru_lc_results.json"
-echo "Trace data sent to host machine via syslog (192.168.33.1:514)"
