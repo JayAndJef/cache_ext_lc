@@ -693,7 +693,7 @@ struct file_state {
 // Per-folio map: key is dev ino index for tracking across eviction
 struct {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
-	__uint(max_entries, 8000000);
+	__uint(max_entries, 1000000);
 	__type(key, struct tracer_page_key);
 	__type(value, struct tracer_page_state);
 } per_folio_map SEC(".maps");
@@ -701,7 +701,7 @@ struct {
 // Per-file map for sequential tracking
 struct {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
-	__uint(max_entries, 1000000);
+	__uint(max_entries, 50000);
 	__type(key, struct file_key);
 	__type(value, struct file_state);
 } per_file_map SEC(".maps");
@@ -747,12 +747,12 @@ inline bool is_folio_relevant(struct folio *folio)
 
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 1 << 24);
+    __uint(max_entries, 1 << 20);
 } rb_access SEC(".maps");
 
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 1 << 24);
+    __uint(max_entries, 1 << 20);
 } rb_insertion SEC(".maps");
 
 struct cache_access_fields {
