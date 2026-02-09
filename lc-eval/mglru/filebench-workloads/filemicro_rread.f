@@ -47,3 +47,7 @@ define process name=filereader,instances=1
 }
 
 echo  "FileMicro-ReadRand Version 2.2 personality successfully loaded"
+
+set $runtime=60
+
+run $runtime

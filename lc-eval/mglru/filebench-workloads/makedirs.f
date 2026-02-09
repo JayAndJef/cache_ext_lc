@@ -42,3 +42,7 @@ define process name=dirmake,instances=1
 }
 
 echo  "MakeDirs Version 1.0 personality successfully loaded"
+
+set $runtime=60
+
+run $runtime

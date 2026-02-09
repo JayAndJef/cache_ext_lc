@@ -49,3 +49,7 @@ define process name=filereader,instances=1
 }
 
 echo  "Copyfiles Version 3.0 personality successfully loaded"
+
+set $runtime=60
+
+run $runtime

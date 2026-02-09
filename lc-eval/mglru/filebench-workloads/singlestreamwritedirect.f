@@ -38,3 +38,7 @@ define process name=seqwrite,instances=1
 }
 
 echo  "Single Stream Direct Write Version 3.0 personality successfully loaded"
+
+set $runtime=60
+
+run $runtime

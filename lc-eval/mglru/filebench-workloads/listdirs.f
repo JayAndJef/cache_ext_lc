@@ -41,3 +41,7 @@ define process name=lsdir,instances=1
 }
 
 echo  "ListDirs Version 1.0 personality successfully loaded"
+
+set $runtime=60
+
+run $runtime

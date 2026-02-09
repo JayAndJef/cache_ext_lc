@@ -75,3 +75,7 @@ define process name=vidreaders,instances=1
 }
 
 echo  "Video Server Version 3.0 personality successfully loaded"
+
+set $runtime=60
+
+run $runtime

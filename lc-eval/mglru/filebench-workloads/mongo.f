@@ -52,3 +52,7 @@ define process name=filereader,instances=1
 }
 
 echo  "Mongo-like Version 2.3 personality successfully loaded"
+
+set $runtime=60
+
+run $runtime

@@ -42,3 +42,7 @@ define process name=remdir,instances=1
 }
 
 echo  "RemoveDir Version 1.0 personality successfully loaded"
+
+set $runtime=60
+
+run $runtime
