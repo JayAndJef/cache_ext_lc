@@ -29,7 +29,7 @@ POLICY_PATH="$BASE_DIR/policies"
 WATCH_DIR="/tmp" # must match filebench workload directory
 RESULTS_PATH="$BASE_DIR/results"
 
-ITERATIONS=3
+ITERATIONS=1
 
 mkdir -p "$RESULTS_PATH"
 

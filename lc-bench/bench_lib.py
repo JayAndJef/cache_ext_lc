@@ -68,13 +68,27 @@ class CacheExtPolicy:
     def stop(self):
         if not self.has_started:
             raise Exception("Policy not started")
-        cmd = ["sudo", "kill", "-2", str(self._policy_thread.pid)]
-        run(cmd)
+
+        if self._policy_thread.poll() is None:
+            cmd = ["sudo", "kill", "-2", str(self._policy_thread.pid)]
+            with suppress(subprocess.CalledProcessError):
+                run(cmd)
+
         out, err = self._policy_thread.communicate()
+
         with suppress(subprocess.CalledProcessError):
             run(["sudo", "rm", "/sys/fs/bpf/cache_ext/scan_pids"])
-        log.info("Policy thread stdout: %s", out.decode("utf-8"))
-        log.info("Policy thread stderr: %s", err.decode("utf-8"))
+
+        if out is not None:
+            log.info("Policy thread stdout: %s", out.decode("utf-8"))
+        else:
+            log.info("Policy thread stdout: (empty)")
+
+        if err is not None:
+            log.info("Policy thread stderr: %s", err.decode("utf-8"))
+        else:
+            log.info("Policy thread stderr: (empty)")
+
         self.has_started = False
         self._policy_thread = None
 
