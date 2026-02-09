@@ -51,7 +51,3 @@ define process name=filedelete,instances=1
 }
 
 echo  "FileMicro-Delete Version 2.4 personality successfully loaded"
-
-set $runtime=60
-
-run $runtime

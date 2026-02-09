@@ -54,7 +54,3 @@ define process name=filecreate,instances=1
 }
 
 echo  "FileMicro-Createfiles Version 2.2 personality successfully loaded"
-
-set $runtime=60
-
-run $runtime

@@ -49,7 +49,3 @@ define process name=filewriter,instances=1
 }
 
 echo  "FileMicro-WriteRandFsync Version 2.1 personality successfully loaded"
-
-set $runtime=60
-
-run $runtime

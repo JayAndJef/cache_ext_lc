@@ -70,7 +70,3 @@ define process name=filereader,instances=1
 }
 
 echo  "RateLimCopyFiles Version 1.1 personality successfully loaded"
-
-set $runtime=60
-
-run $runtime

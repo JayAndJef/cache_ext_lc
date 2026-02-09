@@ -45,7 +45,3 @@ define process name=rand-rw,instances=1
 }
 
 echo "Random RW Version 3.0 personality successfully loaded"
-
-set $runtime=60
-
-run $runtime

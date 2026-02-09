@@ -52,7 +52,3 @@ define process name=filewriter,instances=1
 }
 
 echo  "FileMicro-SeqWriteRandVarTab Version 1.1 personality successfully loaded"
-
-set $runtime=60
-
-run $runtime

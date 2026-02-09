@@ -74,7 +74,3 @@ define process name=filereader1,instances=1
 }
 
 echo  "CompFlow_Demo Version 1.1 personality successfully loaded"
-
-set $runtime=60
-
-run $runtime

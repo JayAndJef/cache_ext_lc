@@ -49,7 +49,3 @@ define process name=filecreater,instances=1
 }
 
 echo  "FileMicro-CreateRand Version 2.1 personality successfully loaded"
-
-set $runtime=60
-
-run $runtime
