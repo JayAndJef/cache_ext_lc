@@ -1037,6 +1037,46 @@ static inline void track_folio_insertion(struct folio *folio) {
 	send_insertion_log(&event);
 }
 
+///////////////////
+// model loading //
+///////////////////
+
+#define MODEL_FEATURES 4
+#define MAX_BINS 10
+
+enum model_features {
+    PD = 0, // delta t
+    PD2 = 1,
+    FQ = 2, // page hotness
+    ID = 3, // delta t for inode
+    ID2 = 4,
+    IE = 5, // inode hotness
+    SZ = 6, // size
+    SD = 7, // seq
+};
+
+// defines the amount of bins in each model feature
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__uint(max_entries, MODEL_FEATURES);
+	__type(key, enum model_features);
+	__type(value, __u8); // n bins in each. cannot exceed MAX_BINS
+} n_bins_map SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, MODEL_FEATURES);
+    __type(key, enum model_features);
+    __type(value, __u64[MAX_BINS]); // bin edges, [start, end)
+} bin_edges_map SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(max_entries, MODEL_FEATURES);
+    __type(key, enum model_features);
+    __type(value, __u64[MAX_BINS]); // bin weights (quantized)
+} nn_weights_map SEC(".maps");
+
 s32 BPF_STRUCT_OPS_SLEEPABLE(mglru_init, struct mem_cgroup *memcg)
 {
 	DEFINE_LRUGEN_int;
