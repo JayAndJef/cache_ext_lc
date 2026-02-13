@@ -795,7 +795,7 @@ int send_string_log(const char *str) {
         return -1;
 
     char tmp[51] = {};
-    int ret = bpf_probe_read_str(tmp, sizeof(tmp), (const void *)str);
+    int ret = bpf_probe_read_kernel_str(tmp, sizeof(tmp), (const void *)str);
     if (ret <= 0) {
         // failed to read string or empty string
         return -1;
