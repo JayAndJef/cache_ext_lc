@@ -745,12 +745,6 @@ inline bool is_folio_relevant(struct folio *folio)
 // Logger //
 ////////////
 
-// general logger
-struct {
-    __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 1 << 10);
-} rb_logger SEC(".maps");
-
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
     __uint(max_entries, 1 << 20);
@@ -784,35 +778,6 @@ struct cache_insertion_event {
     __u64 ino;         /* i: inode number (data.i_ino) */
     __u64 index;       /* x: page index (data.index) */
 };
-
-struct string_log {
-    __u64 timestamp;
-    char str[51];
-};
-
-int send_string_log(const char *str) {
-    if (str == NULL)
-        return -1;
-
-    char tmp[51] = {};
-    int ret = bpf_probe_read_kernel_str(tmp, sizeof(tmp), (const void *)str);
-    if (ret <= 0) {
-        // failed to read string or empty string
-        return -1;
-    }
-
-    struct string_log *log_data = bpf_ringbuf_reserve(&rb_logger, sizeof(*log_data), 0);
-    if (!log_data) {
-        return -1;
-    }
-
-    log_data->timestamp = bpf_ktime_get_ns();
-    __builtin_memcpy(log_data->str, tmp, sizeof(tmp));
-
-    bpf_ringbuf_submit(log_data, 0);
-    return 0;
-}
-
 
 int send_access_log(struct cache_access_fields *fields) {
     struct cache_access_fields *res_ptr = bpf_ringbuf_reserve(&rb_access, sizeof(*fields), 0);
