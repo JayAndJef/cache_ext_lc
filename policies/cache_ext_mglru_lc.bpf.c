@@ -1126,7 +1126,7 @@ s32 BPF_STRUCT_OPS_SLEEPABLE(mglru_init, struct mem_cgroup *memcg)
 		}
 		mglru_lists[i] = list_ptr;
 	}
-	bpf_printk("mglru initialized");
+	bpf_printk("cache_ext: mglru initialized");
 	return 0;
 }
 
