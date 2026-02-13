@@ -2,9 +2,6 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
-#include <cmath>
-#include <linux/bpf.h>
-#include <string.h>
 
 #include "cache_ext_lib.bpf.h"
 #include "dir_watcher.bpf.h"
