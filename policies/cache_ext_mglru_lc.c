@@ -51,17 +51,14 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 struct ring_buffer *rb_access = NULL;
 struct ring_buffer *rb_insertion = NULL;
-struct ring_buffer *rb_logger = NULL;
 
 // File descriptors for binary log files
 static int access_log_fd = -1;
 static int insertion_log_fd = -1;
-static int logger_log_fd = -1;
 
 // Statistics counters
 static uint64_t access_count = 0;
 static uint64_t insertion_count = 0;
-static uint64_t logger_count = 0;
 
 struct cache_access_fields {
     uint64_t timestamp;        // ts: bpf_ktime_get_ns()
@@ -113,25 +110,6 @@ static int handle_insertion(void *ctx, void *data, size_t len)
             fprintf(stderr, "Failed to write insertion event: %s\n", strerror(errno));
         } else {
             insertion_count++;
-        }
-    }
-
-    return 0;
-}
-
-static int handle_logger(void *ctx, void *data, size_t len)
-{
-    struct {
-        uint64_t timestamp;
-        char str[51];
-    } *evt = data;
-
-    if (logger_log_fd >= 0) {
-        ssize_t written = write(logger_log_fd, evt, sizeof(*evt));
-        if (written != sizeof(*evt)) {
-            fprintf(stderr, "Failed to write logger event: %s\n", strerror(errno));
-        } else {
-            logger_count++;
         }
     }
 
@@ -299,12 +277,6 @@ int main(int argc, char **argv)
         goto cleanup;
     }
 
-    rb_logger = ring_buffer__new(bpf_map__fd(skel->maps.rb_logger), handle_logger, NULL, NULL);
-    if (!rb_logger) {
-        perror("Failed to create ring buffer for logger events");
-        goto cleanup;
-    }
-
 	printf("Successfully attached. Logging to binary files. Press Ctrl+C to exit...\n");
 
 	time_t last_stats_time = time(NULL);
@@ -323,17 +295,11 @@ int main(int argc, char **argv)
             break;
         }
 
-        err = ring_buffer__poll(rb_logger, 100);
-        if (err < 0 && err != -EINTR) {
-            fprintf(stderr, "Error polling logger ring buffer: %d\n", err);
-            break;
-        }
-
         // Print statistics every 10 seconds
         time_t now = time(NULL);
         if (now - last_stats_time >= 10) {
-            printf("Stats: %lu access events, %lu insertion events, %lu logger events\n",
-                   access_count, insertion_count, logger_count);
+            printf("Stats: %lu access events, %lu insertion events",
+                   access_count, insertion_count);
             last_stats_time = now;
         }
 	}
@@ -349,8 +315,6 @@ cleanup:
         ring_buffer__free(rb_access);
     if (rb_insertion)
         ring_buffer__free(rb_insertion);
-    if (rb_logger)
-        ring_buffer__free(rb_logger);
     if (access_log_fd >= 0) {
         fsync(access_log_fd);
         close(access_log_fd);
