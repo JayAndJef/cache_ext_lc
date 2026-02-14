@@ -1169,6 +1169,8 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 {
 	DEFINE_LRUGEN_void;
 
+	bpf_printk("num folios in eviction request: %d", eviction_ctx->request_nr_folios_to_evict);
+
 	bool inc_max_seq_failed = false;
 	bpf_spin_lock(&lrugen->lock);
 	DEFINE_MIN_SEQ(lrugen);
