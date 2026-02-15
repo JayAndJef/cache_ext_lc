@@ -1186,7 +1186,7 @@ static inline s64 compute_ml_score(struct folio *folio) {
 
 	s64 score = 0;
 
-	#pragma unroll
+	#pragma clang loop unroll(full)
 	for (u32 feat_idx = 0; feat_idx < NUM_MODEL_FEATURES; feat_idx++) {
 		__u8 *n_bins_ptr = bpf_map_lookup_elem(&n_bins_map, &feat_idx);
 		if (!n_bins_ptr) continue;
@@ -1237,7 +1237,7 @@ static inline void swap_candidates(struct candidate *a, struct candidate *b) {
 static inline void heapify(struct candidate *candidates, __u32 n, __u32 i) {
 	// Bound the loop iterations - max depth is log2(32) = 5
 	// We'll use a fixed iteration count that's safe for BPF verifier
-	#pragma unroll
+	#pragma clang loop unroll(full)
 	for (__u32 iter = 0; iter < 5; iter++) {  // log2(32) = 5 iterations max
 		__u32 largest = i;
 		__u32 left = 2 * i + 1;
@@ -1276,7 +1276,7 @@ static inline void build_heap(struct candidate *candidates, __u32 n) {
 	// We need to iterate backwards, but BPF needs bounded forward loops
 	// So we'll use a fixed iteration count
 
-	#pragma unroll
+	#pragma clang loop unroll(full)
 	for (__u32 iter = 0; iter < 16; iter++) {  // 32/2 = 16 max iterations
 		// Calculate index going backwards: (n/2 - 1) - iter
 		if (n < 2) break;
@@ -1300,7 +1300,7 @@ static inline void sort_candidates(struct candidate *candidates, __u32 n) {
 
 	build_heap(candidates, n);
 
-	#pragma unroll
+	#pragma clang loop unroll(full)
 	for (__u32 iter = 0; iter < MAX_CANDIDATES; iter++) {
 		if (n <= 1) break;
 		if (iter >= n - 1) break;
