@@ -231,7 +231,7 @@ static int load_model_weights(const char *model_file, struct cache_ext_mglru_ml_
 		__u64 bin_edges[MAX_BINS];
 		for (int i = 0; i < n_edges && i < MAX_BINS; i++) {
 			struct json_object *edge_obj = json_object_array_get_idx(bin_edges_arr, i);
-			bin_edges[i] = (__u64)json_object_get_double(edge_obj);
+			bin_edges[i] = json_object_get_int(edge_obj);
 		}
 
 		// Get weights_int
