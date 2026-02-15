@@ -2,8 +2,8 @@
 # MGLRU-LC tracer collection script
 set -eu -o pipefail
 
-# Check for workload file argument
-if [ "$#" -ne 1 ]; then
+# Check for workload  + model file argument
+if [ "$#" -ne 2 ]; then
 	echo "Usage: $0 <workload_file>"
 	echo "Example: $0 /path/to/workload.f"
 	exit 1
