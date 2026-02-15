@@ -1520,8 +1520,12 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 		target_candidates = MAX_CANDIDATES;
 	}
 
-	__u64 next_gen_list = mglru_lists[next_gen];
-	__u64 oldest_gen_list = mglru_lists[oldest_gen];
+	// ensure indices are within bounds for BPF verifier
+	unsigned int next_gen_safe = next_gen & (MAX_NR_GENS - 1);
+	unsigned int oldest_gen_safe = oldest_gen & (MAX_NR_GENS - 1);
+
+	__u64 next_gen_list = mglru_lists[next_gen_safe];
+	__u64 oldest_gen_list = mglru_lists[oldest_gen_safe];
 
 	struct cache_ext_iterate_opts collect_opts = {
 		.continue_list = next_gen_list,
