@@ -5,6 +5,7 @@ BPFTOOL ?= /usr/local/sbin/bpftool #../../tools/bpf/bpftool/bpftool
 CFLAGS = -O2 -target bpf -D__TARGET_ARCH_$(ARCH) -c -g -Wall
 USERSPACE_CFLAGS = -O2 -fsanitize=address -g -Wall
 USERSPACE_LINKER_FLAGS = -L/usr/local/lib64 -lbpf
+USERSPACE_ML_LINKER_FLAGS = -L/usr/local/lib64 -lbpf -ljson-c
 
 # Define the BPF program source and the output object file
 BPF_SRC = cache_ext_simple.bpf.c cache_ext_mru.bpf.c cache_ext_mglru.bpf.c
@@ -35,7 +36,7 @@ CLANG_BPF_SYS_INCLUDES ?= $(shell $(CLANG) -v -E - </dev/null 2>&1 \
 
 all: 	cache_ext_mru.out cache_ext_mglru.out cache_ext_fifo.out \
 		cache_ext_sampling.out cache_ext_get_scan.out cache_ext_s3fifo.out \
-		cache_ext_lhd.out cache_ext_mglru_lc.out   \
+		cache_ext_lhd.out cache_ext_mglru_lc.out cache_ext_mglru_ml.out   \
 		# cache_ext_debug.out cache_ext_simple.out
 
 $(VMLINUX_H):
@@ -51,6 +52,10 @@ $(VMLINUX_H):
 
 %.out: %.c %.skel.h
 	$(CLANG) $(USERSPACE_CFLAGS) $< -o $@ $(USERSPACE_LINKER_FLAGS)
+
+# Special rule for ML policy (needs json-c)
+cache_ext_mglru_ml.out: cache_ext_mglru_ml.c cache_ext_mglru_ml.skel.h
+	$(CLANG) $(USERSPACE_CFLAGS) $< -o $@ $(USERSPACE_ML_LINKER_FLAGS)
 
 clean:
 	rm -f *.o *.out *.skel.h $(VMLINUX_H)
