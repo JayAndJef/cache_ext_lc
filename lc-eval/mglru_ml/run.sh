@@ -16,6 +16,12 @@ if [ ! -f "$WORKLOAD_FILE" ]; then
 	exit 1
 fi
 
+MODEL_FILE="$2"
+if [ ! -f "$MODEL_FILE" ]; then
+	echo "Error: Model file not found: $MODEL_FILE"
+	exit 1
+fi
+
 if ! uname -r | grep -q "cache-ext"; then
 	echo "This script is intended to be run on a cache_ext kernel."
 	echo "Please switch to the cache_ext kernel and try again."
@@ -45,6 +51,7 @@ python3 "$BENCH_PATH/bench_mglru_lc.py" \
 	--cpu 4 \
 	--policy-loader "$POLICY_PATH/cache_ext_mglru_ml.out" \
 	--results-file "$RESULTS_PATH/mglru_lc_results.json" \
+	--model-file "$MODEL_FILE" \
 	--watch-dir "$WATCH_DIR" \
 	--filebench-workload "$WORKLOAD_FILE" \
 	--iterations "$ITERATIONS" \
