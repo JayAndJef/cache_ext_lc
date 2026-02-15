@@ -47,7 +47,7 @@ class MGLRULCBenchmark(BenchmarkFramework):
 
     def generate_configs(self, configs: List[Dict]) -> List[Dict]:
         configs = add_config_option("passes", [10], configs)
-        configs = add_config_option("cgroup_size", [4 * GiB], configs)
+        configs = add_config_option("cgroup_size", [1 * GiB], configs)
         if self.args.default_only:
             configs = add_config_option(
                 "cgroup_name", [DEFAULT_BASELINE_CGROUP], configs
