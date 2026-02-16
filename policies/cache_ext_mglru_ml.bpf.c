@@ -1567,7 +1567,9 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 					update_nr_pages_stat(lrugen, oldest_gen, -pages); \
 					update_nr_pages_stat(lrugen, next_gen, pages); \
 					atomic_long_store(&meta->gen, next_gen); \
-					update_protected_stat(lrugen, tier, pages); \
+					if (tier >= 1 && tier < MAX_NR_TIERS) { \
+						update_protected_stat(lrugen, tier, pages); \
+					} \
 				} \
 			} \
 		} \
