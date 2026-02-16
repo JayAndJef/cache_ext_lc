@@ -1415,6 +1415,12 @@ static int mglru_ml_collect_fn(int idx, struct cache_ext_list_node *a)
 		return CACHE_EXT_CONTINUE_ITER;
 	}
 
+	asm volatile(
+		"%[num_cand] &= %[mask]"
+		: [num_cand] "+r" (num_cand)
+		: [mask] "i" (MAX_CANDIDATES - 1)
+	);
+
 	fkey = (__u64)a->folio;
 	(*candidates)[num_cand].folio_addr = fkey;
 	(*candidates)[num_cand].pages      = folio_nr_pages(a->folio);
