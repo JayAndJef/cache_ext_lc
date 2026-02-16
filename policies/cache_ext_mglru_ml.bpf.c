@@ -1081,9 +1081,10 @@ struct {
 #define MAX_CANDIDATES 96
 
 struct candidate {
-	struct folio *folio;
-	s64 score;
-	struct folio_metadata *metadata;
+	__u64 folio_addr;   /* raw folio address (scalar), used as key + returned to kernel */
+	s64   score;        /* computed while folio ptr is trusted */
+	__s32 pages;        /* folio_nr_pages computed while folio ptr is trusted */
+	__s32 tier;         /* tier computed while meta ptr is trusted */
 };
 
 struct {
@@ -1380,6 +1381,8 @@ static int mglru_ml_collect_fn(int idx, struct cache_ext_list_node *a)
 	}
 
 	u32 cand_key = 0;
+	__u64 fkey;
+
 	__u32 *num_cand_ptr = bpf_map_lookup_elem(&num_candidates_map, &cand_key);
 	if (!num_cand_ptr) {
 		return CACHE_EXT_CONTINUE_ITER;
@@ -1395,9 +1398,12 @@ static int mglru_ml_collect_fn(int idx, struct cache_ext_list_node *a)
 		return CACHE_EXT_CONTINUE_ITER;
 	}
 
-	(*candidates)[num_cand].folio = a->folio;
-	(*candidates)[num_cand].metadata = meta;
-	(*candidates)[num_cand].score = 0; // Will be computed later
+	fkey = (__u64)a->folio;
+	(*candidates)[num_cand].folio_addr = fkey;
+	(*candidates)[num_cand].pages      = folio_nr_pages(a->folio);
+	(*candidates)[num_cand].tier       =
+		lru_tier_from_refs(atomic_long_read(&meta->accesses));
+	(*candidates)[num_cand].score      = compute_ml_score(a->folio);
 
 	*num_cand_ptr = num_cand + 1;
 
@@ -1563,12 +1569,6 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 		return;
 	}
 
-	// Phase 2: Score all candidates using ML model
-	#pragma unroll
-	for (__u32 i = 0; i < MAX_CANDIDATES && i < num_candidates; i++) {
-		(*candidates)[i].score = compute_ml_score((*candidates)[i].folio);
-	}
-
 	// Phase 3: Sort candidates by score (lower score = evict first)
 	sort_candidates(*candidates, num_candidates);
 
@@ -1578,17 +1578,17 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 		num_to_evict = num_candidates;
 	}
 
-	// Add worst-scoring candidates to eviction list
+	// Phase 4: Fill eviction list with lowest-scoring candidates
+	eviction_ctx->nr_folios_to_evict = 0;
 	for (__u32 i = 0; i < num_to_evict && i < 32; i++) {
-		eviction_ctx->folios_to_evict[i] = (*candidates)[i].folio;
+		__u64 fkey = (*candidates)[i].folio_addr;
+		eviction_ctx->folios_to_evict[i] = (struct folio *)fkey;
 		eviction_ctx->nr_folios_to_evict++;
 
-		struct folio_metadata *meta = (*candidates)[i].metadata;
-		if (meta) {
-			int tier = lru_tier_from_refs(atomic_long_read(&meta->accesses));
-			update_evicted_stat(lrugen, tier, 1);
-			update_nr_pages_stat(lrugen, oldest_gen, -folio_nr_pages((*candidates)[i].folio));
-		}
+		int tier  = (*candidates)[i].tier;
+		int pages = (*candidates)[i].pages;
+		update_evicted_stat(lrugen, tier, 1);
+		update_nr_pages_stat(lrugen, oldest_gen, -pages);
 	}
 
 	// Phase 5: Promote non-evicted candidates ONLY if tier > threshold
@@ -1597,17 +1597,18 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 	// - Access bits/tier decide what to promote (hot pages)
 	// - Other pages stay in oldest gen for reconsideration
 	for (__u32 i = num_to_evict; i < num_candidates && i < MAX_CANDIDATES; i++) {
-		struct folio_metadata *meta = (*candidates)[i].metadata;
-		if (meta) {
-			int tier = lru_tier_from_refs(atomic_long_read(&meta->accesses));
+		__u64 fkey = (*candidates)[i].folio_addr;
+		struct folio_metadata *meta = bpf_map_lookup_elem(&folio_metadata_map, &fkey);
+		if (!meta)
+			continue;
 
-			if (tier > tier_threshold + 1) {
-				int num_pages = folio_nr_pages((*candidates)[i].folio);
-				update_nr_pages_stat(lrugen, oldest_gen, -num_pages);
-				update_nr_pages_stat(lrugen, next_gen, num_pages);
-				atomic_long_store(&meta->gen, next_gen);
-				update_protected_stat(lrugen, tier, num_pages);
-			}
+		int tier  = (*candidates)[i].tier;
+		int pages = (*candidates)[i].pages;
+		if (tier > (int)tier_threshold + 1) {
+			update_nr_pages_stat(lrugen, oldest_gen, -pages);
+			update_nr_pages_stat(lrugen, next_gen, pages);
+			atomic_long_store(&meta->gen, next_gen);
+			update_protected_stat(lrugen, tier, pages);
 		}
 	}
 
