@@ -1211,107 +1211,27 @@ static inline s64 compute_ml_score(struct folio *folio) {
 	return score;
 }
 
-// Heapsort for candidates - O(n log n) instead of O(n²) insertion sort
-//
-// Why heapsort over insertion sort?
-// - Insertion sort: O(n²) worst case - for 32 candidates, up to 496 iterations
-// - Heapsort: O(n log n) - for 32 candidates, ~160 operations (5 * 32)
-// - Better performance for larger candidate sets
-//
-// BPF compatibility:
-// - All loops use #pragma unroll with fixed iteration counts
-// - No recursion (heapify uses iterative approach)
-// - All array accesses are bounds-checked
-// - Verifier can prove termination and safety
-
-// Helper: swap two candidates
-static inline void swap_candidates(struct candidate *a, struct candidate *b) {
-	struct candidate temp = *a;
-	*a = *b;
-	*b = temp;
-}
-
-// Heapify a subtree rooted at index i (max-heap for descending sort)
-// n is the size of the heap
-// We want ascending order (lowest scores first), so we use a max-heap
-// and extract from the end
-static inline void heapify(struct candidate *candidates, __u32 n, __u32 i) {
-	// Bound the loop iterations - max depth is log2(32) = 5
-	// We'll use a fixed iteration count that's safe for BPF verifier
-	#pragma clang loop unroll(full)
-	for (__u32 iter = 0; iter < 5; iter++) {  // log2(32) = 5 iterations max
-		__u32 largest = i;
-		__u32 left = 2 * i + 1;
-		__u32 right = 2 * i + 2;
-
-		// Bounds check to help verifier
-		if (i >= MAX_CANDIDATES || i >= n) break;
-
-		// Find largest among root, left child, right child
-		if (left < n && left < MAX_CANDIDATES &&
-		    candidates[left].score > candidates[largest].score) {
-			largest = left;
-		}
-
-		if (right < n && right < MAX_CANDIDATES &&
-		    candidates[right].score > candidates[largest].score) {
-			largest = right;
-		}
-
-		// If largest is not root, swap and continue heapifying
-		if (largest != i) {
-			swap_candidates(&candidates[i], &candidates[largest]);
-			i = largest;  // Move down the tree
-		} else {
-			break;  // Heap property satisfied
-		}
-	}
-}
-
-// Build max-heap from array
-static inline void build_heap(struct candidate *candidates, __u32 n) {
-	if (n <= 1 || n > MAX_CANDIDATES) return;
-
-	// Start from last non-leaf node and heapify each node
-	// Last non-leaf is at index (n/2 - 1)
-	// We need to iterate backwards, but BPF needs bounded forward loops
-	// So we'll use a fixed iteration count
-
-	#pragma clang loop unroll(full)
-	for (__u32 iter = 0; iter < 16; iter++) {  // 32/2 = 16 max iterations
-		// Calculate index going backwards: (n/2 - 1) - iter
-		if (n < 2) break;
-		__u32 start_idx = n / 2;
-		if (start_idx == 0) break;
-
-		if (iter >= start_idx) break;
-		__u32 i = start_idx - 1 - iter;
-
-		if (i >= MAX_CANDIDATES) continue;
-		heapify(candidates, n, i);
-	}
-}
-
-// Heapsort main function
+// insertion sort - verifier-friendly because heapsort doesnt work
 static inline void sort_candidates(struct candidate *candidates, __u32 n) {
 	if (n <= 1) return;
 
-	// Clamp n to MAX_CANDIDATES
 	if (n > MAX_CANDIDATES) n = MAX_CANDIDATES;
 
-	build_heap(candidates, n);
+	#pragma unroll
+	for (__u32 i = 1; i < MAX_CANDIDATES && i < n; i++) {
+		struct candidate key = candidates[i];
+		__u32 j = i;
 
-	#pragma clang loop unroll(full)
-	for (__u32 iter = 0; iter < MAX_CANDIDATES; iter++) {
-		if (n <= 1) break;
-		if (iter >= n - 1) break;
+		#pragma unroll
+		for (__u32 shift = 0; shift < MAX_CANDIDATES && shift < i; shift++) {
+			if (j == 0) break;
+			if (candidates[j - 1].score <= key.score) break;
 
-		__u32 i = n - 1 - iter;  // Current heap size
-		if (i == 0 || i >= MAX_CANDIDATES) break;
+			candidates[j] = candidates[j - 1];
+			j--;
+		}
 
-		swap_candidates(&candidates[0], &candidates[i]);
-
-		heapify(candidates, i, 0);
+		candidates[j] = key;
 	}
 }
 
