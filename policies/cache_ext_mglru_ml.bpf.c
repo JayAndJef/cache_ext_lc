@@ -1372,6 +1372,7 @@ static int mglru_ml_collect_fn(int idx, struct cache_ext_list_node *a)
 	__u64 key = (__u64)a->folio;
 	struct folio_metadata *meta = bpf_map_lookup_elem(&folio_metadata_map, &key);
 	if (!meta) {
+		bpf_printk("cache_ext: ml_collect: Failed to lookup folio metadata\n");
 		return CACHE_EXT_CONTINUE_ITER;
 	}
 
@@ -1589,7 +1590,7 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 	sort_candidates(*candidates, num_candidates);
 
 	// Phase 4: Select worst N candidates for eviction
-	__u32 num_to_evict = eviction_ctx->request_nr_folios_to_evict;
+	__u32 num_to_evict = original_nr_folios_to_evict;
 	if (num_to_evict > num_candidates) {
 		num_to_evict = num_candidates;
 	}
@@ -1597,7 +1598,7 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 	// Phase 4: Fill eviction list with lowest-scoring candidates
 	eviction_ctx->nr_folios_to_evict = 0;
 
-#define EVICT_LOOP_BODY(i) \
+    #define EVICT_LOOP_BODY(i) \
 	do { \
 		if ((i) < num_to_evict && (i) < 32) { \
 			__u64 fkey = (*candidates)[(i)].folio_addr; \
@@ -1643,7 +1644,7 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 	EVICT_LOOP_BODY(30);
 	EVICT_LOOP_BODY(31);
 
-#undef EVICT_LOOP_BODY
+    #undef EVICT_LOOP_BODY
 
 	// Phase 5: Promote non-evicted candidates ONLY if tier > threshold
 	// This aligns with original MGLRU semantics:
@@ -1651,7 +1652,7 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 	// - Access bits/tier decide what to promote (hot pages)
 	// - Other pages stay in oldest gen for reconsideration
 
-#define PROMOTE_LOOP_BODY(i) \
+    #define PROMOTE_LOOP_BODY(i) \
 	do { \
 		if ((i) >= num_to_evict && (i) < num_candidates && (i) < MAX_CANDIDATES) { \
 			__u64 fkey = (*candidates)[(i)].folio_addr; \
@@ -1659,7 +1660,7 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 			if (meta) { \
 				int tier  = (*candidates)[(i)].tier; \
 				int pages = (*candidates)[(i)].pages; \
-				if (tier > (int)tier_threshold + 1) { \
+				if (tier > (int)tier_threshold) { \
 					update_nr_pages_stat(lrugen, oldest_gen, -pages); \
 					update_nr_pages_stat(lrugen, next_gen, pages); \
 					atomic_long_store(&meta->gen, next_gen); \
@@ -1768,17 +1769,17 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 	PROMOTE_LOOP_BODY(94);
 	PROMOTE_LOOP_BODY(95);
 
-#undef PROMOTE_LOOP_BODY
+    #undef PROMOTE_LOOP_BODY
 
 	s64 success_evicted = eviction_ctx->nr_folios_to_evict;
-	s64 failed_evicted = max(0, eviction_ctx->request_nr_folios_to_evict - eviction_ctx->nr_folios_to_evict);
+	s64 failed_evicted = max(0, original_nr_folios_to_evict - eviction_ctx->nr_folios_to_evict);
 	__sync_fetch_and_add(&lrugen->failed_evicted, failed_evicted);
 	__sync_fetch_and_add(&lrugen->success_evicted, success_evicted);
-	if (eviction_ctx->nr_folios_to_evict < eviction_ctx->request_nr_folios_to_evict) {
+	if (eviction_ctx->nr_folios_to_evict < original_nr_folios_to_evict) {
 		bpf_printk("cache_ext: ML eviction: collected %d candidates, evicted %d/%d requested\n",
 				num_candidates,
 				eviction_ctx->nr_folios_to_evict,
-				eviction_ctx->request_nr_folios_to_evict);
+				original_nr_folios_to_evict);
 	}
 }
 
