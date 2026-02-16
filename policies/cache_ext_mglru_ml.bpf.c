@@ -1264,37 +1264,36 @@ static int find_min_callback(__u32 index, void *data) {
 static int sort_position_callback(__u32 i, void *data) {
 	struct sort_outer_ctx *ctx = data;
 
-	if (i >= MAX_CANDIDATES) return 1;
 	if (i >= ctx->positions) return 1;
 	if (i >= ctx->n) return 1;
+	if (i >= MAX_CANDIDATES) return 1; // Explicit bound for verifier
 
-	__u32 i_safe = i;
-	if (i_safe >= MAX_CANDIDATES) i_safe = MAX_CANDIDATES - 1;
+	__u32 min_idx = i;
+	s64 min_score = ctx->candidates[i].score;
 
-	__u32 min_idx = i_safe;
-	s64 min_score = ctx->candidates[i_safe].score;
-
+	// Use bpf_loop for inner loop
 	struct sort_inner_ctx inner_ctx = {
 		.candidates = ctx->candidates,
 		.n = ctx->n,
-		.i = i_safe,
+		.i = i,
 		.min_idx = &min_idx,
 		.min_score = &min_score,
 	};
 
-	__u32 inner_iterations = ctx->n - i_safe - 1;
-	if (inner_iterations > MAX_CANDIDATES - i_safe - 1)
-		inner_iterations = MAX_CANDIDATES - i_safe - 1;
+	__u32 inner_iterations = ctx->n - i - 1;
+	if (inner_iterations > MAX_CANDIDATES - i - 1)
+		inner_iterations = MAX_CANDIDATES - i - 1;
 
 	bpf_loop(inner_iterations, find_min_callback, &inner_ctx, 0);
 
-	if (min_idx != i_safe) {
-		struct candidate temp = ctx->candidates[i_safe];
-		ctx->candidates[i_safe] = ctx->candidates[min_idx];
+	// Swap if needed
+	if (min_idx != i) {
+		struct candidate temp = ctx->candidates[i];
+		ctx->candidates[i] = ctx->candidates[min_idx];
 		ctx->candidates[min_idx] = temp;
 	}
 
-	return 0;
+	return 0; // continue
 }
 
 // Partial selection sort using bpf_loop to reduce verifier complexity
