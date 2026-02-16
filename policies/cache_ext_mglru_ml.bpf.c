@@ -1247,6 +1247,13 @@ static int find_min_callback(__u32 index, void *data) {
 	if (j >= ctx->n) return 1; // stop iteration
 	if (j >= MAX_CANDIDATES) return 1;
 
+	/// manual assembly bounds check
+	asm volatile(
+	    "%[j] &= %[mask]"
+		: [j] "+r" (j)
+		: [mask] "i" (MAX_CANDIDATES - 1)
+	);
+
 	if (ctx->candidates[j].score < *ctx->min_score) {
 		*ctx->min_idx = j;
 		*ctx->min_score = ctx->candidates[j].score;
