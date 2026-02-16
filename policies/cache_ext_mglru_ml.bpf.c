@@ -1224,28 +1224,38 @@ static inline s64 compute_ml_score(struct folio *folio) {
 	return score;
 }
 
-// insertion sort - verifier-friendly because heapsort doesnt work
+// Partial selection sort - only sort first 32 positions
+// Selection sort guarantees the k smallest elements are in the first k positions
 static inline void sort_candidates(struct candidate *candidates, __u32 n) {
 	if (n <= 1) return;
-
 	if (n > MAX_CANDIDATES) n = MAX_CANDIDATES;
+	#define POSITIONS_TO_SORT 32
 
-	#pragma unroll
-	for (__u32 i = 1; i < MAX_CANDIDATES && i < n; i++) {
-		struct candidate key = candidates[i];
-		__u32 j = i;
+	__u32 positions = n < POSITIONS_TO_SORT ? n : POSITIONS_TO_SORT;
+	for (__u32 i = 0; i < POSITIONS_TO_SORT; i++) {
+		if (i >= positions) break;
+		if (i >= n) break;
 
-		#pragma unroll
-		for (__u32 shift = 0; shift < MAX_CANDIDATES && shift < i; shift++) {
-			if (j == 0) break;
-			if (candidates[j - 1].score <= key.score) break;
+		__u32 min_idx = i;
+		s64 min_score = candidates[i].score;
 
-			candidates[j] = candidates[j - 1];
-			j--;
+		for (__u32 j = i + 1; j < MAX_CANDIDATES; j++) {
+			if (j >= n) break;
+
+			if (candidates[j].score < min_score) {
+				min_idx = j;
+				min_score = candidates[j].score;
+			}
 		}
 
-		candidates[j] = key;
+		if (min_idx != i) {
+			struct candidate temp = candidates[i];
+			candidates[i] = candidates[min_idx];
+			candidates[min_idx] = temp;
+		}
 	}
+
+	#undef POSITIONS_TO_SORT
 }
 
 s32 BPF_STRUCT_OPS_SLEEPABLE(mglru_init, struct mem_cgroup *memcg)
