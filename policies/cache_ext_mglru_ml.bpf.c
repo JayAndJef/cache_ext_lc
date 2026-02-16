@@ -1269,7 +1269,7 @@ static int sort_position_callback(__u32 i, void *data) {
 	if (i >= ctx->positions) return 1;
 	if (i >= ctx->n) return 1;
 
-	volatile __u32 i_safe = i & (MAX_CANDIDATES - 1);
+	__u32 i_safe = i & (MAX_CANDIDATES - 1);
 
 	__u32 min_idx = i_safe;
 	s64 min_score = ctx->candidates[i_safe].score;
