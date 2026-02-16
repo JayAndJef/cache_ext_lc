@@ -1296,6 +1296,13 @@ static int sort_position_callback(__u32 i, void *data) {
 
 	// Swap if needed
 	if (min_idx != i) {
+       	asm volatile(
+       	    "%[min_idx] &= %[mask]\n\t"
+            "%[i] &= %[mask]\n\t"
+      		: [min_idx] "+r" (min_idx)
+            , [i] "+r" (i)
+            : [mask] "i" (MAX_CANDIDATES - 1)
+       	);
 		struct candidate temp = ctx->candidates[i];
 		ctx->candidates[i] = ctx->candidates[min_idx];
 		ctx->candidates[min_idx] = temp;
