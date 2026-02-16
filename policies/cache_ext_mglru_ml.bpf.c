@@ -1500,37 +1500,177 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 
 	// Phase 4: Fill eviction list with lowest-scoring candidates
 	eviction_ctx->nr_folios_to_evict = 0;
-	for (__u32 i = 0; i < num_to_evict && i < 32; i++) {
-		__u64 fkey = (*candidates)[i].folio_addr;
-		eviction_ctx->folios_to_evict[i] = (struct folio *)fkey;
-		eviction_ctx->nr_folios_to_evict++;
 
-		int tier  = (*candidates)[i].tier;
-		int pages = (*candidates)[i].pages;
-		update_evicted_stat(lrugen, tier, 1);
-		update_nr_pages_stat(lrugen, oldest_gen, -pages);
-	}
+#define EVICT_LOOP_BODY(i) \
+	do { \
+		if ((i) < num_to_evict && (i) < 32) { \
+			__u64 fkey = (*candidates)[(i)].folio_addr; \
+			eviction_ctx->folios_to_evict[(i)] = (struct folio *)fkey; \
+			eviction_ctx->nr_folios_to_evict++; \
+			int tier  = (*candidates)[(i)].tier; \
+			int pages = (*candidates)[(i)].pages; \
+			update_evicted_stat(lrugen, tier, 1); \
+			update_nr_pages_stat(lrugen, oldest_gen, -pages); \
+		} \
+	} while (0)
+
+	EVICT_LOOP_BODY(0);
+	EVICT_LOOP_BODY(1);
+	EVICT_LOOP_BODY(2);
+	EVICT_LOOP_BODY(3);
+	EVICT_LOOP_BODY(4);
+	EVICT_LOOP_BODY(5);
+	EVICT_LOOP_BODY(6);
+	EVICT_LOOP_BODY(7);
+	EVICT_LOOP_BODY(8);
+	EVICT_LOOP_BODY(9);
+	EVICT_LOOP_BODY(10);
+	EVICT_LOOP_BODY(11);
+	EVICT_LOOP_BODY(12);
+	EVICT_LOOP_BODY(13);
+	EVICT_LOOP_BODY(14);
+	EVICT_LOOP_BODY(15);
+	EVICT_LOOP_BODY(16);
+	EVICT_LOOP_BODY(17);
+	EVICT_LOOP_BODY(18);
+	EVICT_LOOP_BODY(19);
+	EVICT_LOOP_BODY(20);
+	EVICT_LOOP_BODY(21);
+	EVICT_LOOP_BODY(22);
+	EVICT_LOOP_BODY(23);
+	EVICT_LOOP_BODY(24);
+	EVICT_LOOP_BODY(25);
+	EVICT_LOOP_BODY(26);
+	EVICT_LOOP_BODY(27);
+	EVICT_LOOP_BODY(28);
+	EVICT_LOOP_BODY(29);
+	EVICT_LOOP_BODY(30);
+	EVICT_LOOP_BODY(31);
+
+#undef EVICT_LOOP_BODY
 
 	// Phase 5: Promote non-evicted candidates ONLY if tier > threshold
 	// This aligns with original MGLRU semantics:
 	// - ML model decides what to evict (lowest scores)
 	// - Access bits/tier decide what to promote (hot pages)
 	// - Other pages stay in oldest gen for reconsideration
-	for (__u32 i = num_to_evict; i < num_candidates && i < MAX_CANDIDATES; i++) {
-		__u64 fkey = (*candidates)[i].folio_addr;
-		struct folio_metadata *meta = bpf_map_lookup_elem(&folio_metadata_map, &fkey);
-		if (!meta)
-			continue;
 
-		int tier  = (*candidates)[i].tier;
-		int pages = (*candidates)[i].pages;
-		if (tier > (int)tier_threshold + 1) {
-			update_nr_pages_stat(lrugen, oldest_gen, -pages);
-			update_nr_pages_stat(lrugen, next_gen, pages);
-			atomic_long_store(&meta->gen, next_gen);
-			update_protected_stat(lrugen, tier, pages);
-		}
-	}
+#define PROMOTE_LOOP_BODY(i) \
+	do { \
+		if ((i) >= num_to_evict && (i) < num_candidates && (i) < MAX_CANDIDATES) { \
+			__u64 fkey = (*candidates)[(i)].folio_addr; \
+			struct folio_metadata *meta = bpf_map_lookup_elem(&folio_metadata_map, &fkey); \
+			if (meta) { \
+				int tier  = (*candidates)[(i)].tier; \
+				int pages = (*candidates)[(i)].pages; \
+				if (tier > (int)tier_threshold + 1) { \
+					update_nr_pages_stat(lrugen, oldest_gen, -pages); \
+					update_nr_pages_stat(lrugen, next_gen, pages); \
+					atomic_long_store(&meta->gen, next_gen); \
+					update_protected_stat(lrugen, tier, pages); \
+				} \
+			} \
+		} \
+	} while (0)
+
+	PROMOTE_LOOP_BODY(0);
+	PROMOTE_LOOP_BODY(1);
+	PROMOTE_LOOP_BODY(2);
+	PROMOTE_LOOP_BODY(3);
+	PROMOTE_LOOP_BODY(4);
+	PROMOTE_LOOP_BODY(5);
+	PROMOTE_LOOP_BODY(6);
+	PROMOTE_LOOP_BODY(7);
+	PROMOTE_LOOP_BODY(8);
+	PROMOTE_LOOP_BODY(9);
+	PROMOTE_LOOP_BODY(10);
+	PROMOTE_LOOP_BODY(11);
+	PROMOTE_LOOP_BODY(12);
+	PROMOTE_LOOP_BODY(13);
+	PROMOTE_LOOP_BODY(14);
+	PROMOTE_LOOP_BODY(15);
+	PROMOTE_LOOP_BODY(16);
+	PROMOTE_LOOP_BODY(17);
+	PROMOTE_LOOP_BODY(18);
+	PROMOTE_LOOP_BODY(19);
+	PROMOTE_LOOP_BODY(20);
+	PROMOTE_LOOP_BODY(21);
+	PROMOTE_LOOP_BODY(22);
+	PROMOTE_LOOP_BODY(23);
+	PROMOTE_LOOP_BODY(24);
+	PROMOTE_LOOP_BODY(25);
+	PROMOTE_LOOP_BODY(26);
+	PROMOTE_LOOP_BODY(27);
+	PROMOTE_LOOP_BODY(28);
+	PROMOTE_LOOP_BODY(29);
+	PROMOTE_LOOP_BODY(30);
+	PROMOTE_LOOP_BODY(31);
+	PROMOTE_LOOP_BODY(32);
+	PROMOTE_LOOP_BODY(33);
+	PROMOTE_LOOP_BODY(34);
+	PROMOTE_LOOP_BODY(35);
+	PROMOTE_LOOP_BODY(36);
+	PROMOTE_LOOP_BODY(37);
+	PROMOTE_LOOP_BODY(38);
+	PROMOTE_LOOP_BODY(39);
+	PROMOTE_LOOP_BODY(40);
+	PROMOTE_LOOP_BODY(41);
+	PROMOTE_LOOP_BODY(42);
+	PROMOTE_LOOP_BODY(43);
+	PROMOTE_LOOP_BODY(44);
+	PROMOTE_LOOP_BODY(45);
+	PROMOTE_LOOP_BODY(46);
+	PROMOTE_LOOP_BODY(47);
+	PROMOTE_LOOP_BODY(48);
+	PROMOTE_LOOP_BODY(49);
+	PROMOTE_LOOP_BODY(50);
+	PROMOTE_LOOP_BODY(51);
+	PROMOTE_LOOP_BODY(52);
+	PROMOTE_LOOP_BODY(53);
+	PROMOTE_LOOP_BODY(54);
+	PROMOTE_LOOP_BODY(55);
+	PROMOTE_LOOP_BODY(56);
+	PROMOTE_LOOP_BODY(57);
+	PROMOTE_LOOP_BODY(58);
+	PROMOTE_LOOP_BODY(59);
+	PROMOTE_LOOP_BODY(60);
+	PROMOTE_LOOP_BODY(61);
+	PROMOTE_LOOP_BODY(62);
+	PROMOTE_LOOP_BODY(63);
+	PROMOTE_LOOP_BODY(64);
+	PROMOTE_LOOP_BODY(65);
+	PROMOTE_LOOP_BODY(66);
+	PROMOTE_LOOP_BODY(67);
+	PROMOTE_LOOP_BODY(68);
+	PROMOTE_LOOP_BODY(69);
+	PROMOTE_LOOP_BODY(70);
+	PROMOTE_LOOP_BODY(71);
+	PROMOTE_LOOP_BODY(72);
+	PROMOTE_LOOP_BODY(73);
+	PROMOTE_LOOP_BODY(74);
+	PROMOTE_LOOP_BODY(75);
+	PROMOTE_LOOP_BODY(76);
+	PROMOTE_LOOP_BODY(77);
+	PROMOTE_LOOP_BODY(78);
+	PROMOTE_LOOP_BODY(79);
+	PROMOTE_LOOP_BODY(80);
+	PROMOTE_LOOP_BODY(81);
+	PROMOTE_LOOP_BODY(82);
+	PROMOTE_LOOP_BODY(83);
+	PROMOTE_LOOP_BODY(84);
+	PROMOTE_LOOP_BODY(85);
+	PROMOTE_LOOP_BODY(86);
+	PROMOTE_LOOP_BODY(87);
+	PROMOTE_LOOP_BODY(88);
+	PROMOTE_LOOP_BODY(89);
+	PROMOTE_LOOP_BODY(90);
+	PROMOTE_LOOP_BODY(91);
+	PROMOTE_LOOP_BODY(92);
+	PROMOTE_LOOP_BODY(93);
+	PROMOTE_LOOP_BODY(94);
+	PROMOTE_LOOP_BODY(95);
+
+#undef PROMOTE_LOOP_BODY
 
 	s64 success_evicted = eviction_ctx->nr_folios_to_evict;
 	s64 failed_evicted = max(0, eviction_ctx->request_nr_folios_to_evict - eviction_ctx->nr_folios_to_evict);
