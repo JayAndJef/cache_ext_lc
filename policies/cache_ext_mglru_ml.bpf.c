@@ -1646,16 +1646,19 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 
     #undef EVICT_LOOP_BODY
 
-	// Phase 5: Promote non-evicted candidates ONLY if tier > threshold
+	// Phase 5: Handle non-evicted candidates
+	// - Hot candidates (tier > threshold): Keep in next_gen (already there), update metadata
+	// - Cold candidates (tier <= threshold): Move back to oldest_gen to match metadata
 	// This aligns with original MGLRU semantics:
 	// - ML model decides what to evict (lowest scores)
 	// - Access bits/tier decide what to promote (hot pages)
-	// - Other pages stay in oldest gen for reconsideration
+	// - Cold pages stay in oldest gen for reconsideration
 
     #define PROMOTE_LOOP_BODY(i) \
 	do { \
 		if ((i) >= num_to_evict && (i) < num_candidates && (i) < MAX_CANDIDATES) { \
 			__u64 fkey = (*candidates)[(i)].folio_addr; \
+			struct folio *folio_ptr = (struct folio *)fkey; \
 			struct folio_metadata *meta = bpf_map_lookup_elem(&folio_metadata_map, &fkey); \
 			if (meta) { \
 				int tier  = (*candidates)[(i)].tier; \
@@ -1667,6 +1670,8 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 					if (tier >= 1 && tier < MAX_NR_TIERS) { \
 						update_protected_stat(lrugen, tier, pages); \
 					} \
+				} else { \
+					bpf_cache_ext_list_move(oldest_gen_list, folio_ptr, false); \
 				} \
 			} \
 		} \
