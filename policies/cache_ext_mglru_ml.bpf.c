@@ -1226,13 +1226,13 @@ static inline s64 compute_ml_score(struct folio *folio) {
 
 // Context for bpf_loop callbacks
 struct sort_outer_ctx {
-	struct candidate *candidates;
+	struct candidate* candidates;
 	__u32 n;
 	__u32 positions;
 };
 
 struct sort_inner_ctx {
-	struct candidate *candidates;
+	struct candidate* candidates;
 	__u32 n;
 	__u32 i;
 	__u32 *min_idx;
@@ -1261,6 +1261,13 @@ static int sort_position_callback(__u32 i, void *data) {
 
 	if (i >= ctx->positions) return 1;
 	if (i >= ctx->n) return 1;
+
+	/// manual assembly bounds check
+	asm volatile(
+	    "%[i] &= %[mask]"
+		: [i] "+r" (i)
+		: [mask] "i" (MAX_CANDIDATES - 1)
+	);
 
 	__u32 min_idx = i;
 	s64 min_score = ctx->candidates[i].score;
@@ -1291,7 +1298,7 @@ static int sort_position_callback(__u32 i, void *data) {
 }
 
 // Partial selection sort using bpf_loop to reduce verifier complexity
-static inline void sort_candidates(struct candidate *candidates, __u32 n) {
+static inline void sort_candidates(struct candidate candidates[MAX_CANDIDATES], __u32 n) {
 	if (n <= 1) return;
 	if (n > MAX_CANDIDATES) n = MAX_CANDIDATES;
 
