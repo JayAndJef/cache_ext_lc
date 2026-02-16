@@ -1078,7 +1078,7 @@ struct {
 } nn_weights_map SEC(".maps");
 
 // Candidate structure for ML reranking
-#define MAX_CANDIDATES 96
+#define MAX_CANDIDATES 75
 
 struct candidate {
 	__u64 folio_addr;   /* raw folio address (scalar), used as key + returned to kernel */
