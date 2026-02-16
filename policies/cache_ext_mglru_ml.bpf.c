@@ -1187,26 +1187,37 @@ static inline s64 compute_ml_score(struct folio *folio) {
 
 	s64 score = 0;
 
-	#pragma clang loop unroll(full)
-	for (u32 feat_idx = 0; feat_idx < NUM_MODEL_FEATURES; feat_idx++) {
-		__u8 *n_bins_ptr = bpf_map_lookup_elem(&n_bins_map, &feat_idx);
-		if (!n_bins_ptr) continue;
+#define PROCESS_FEATURE(feat_idx) \
+	do { \
+		u32 idx = (feat_idx); \
+		__u8 *n_bins_ptr = bpf_map_lookup_elem(&n_bins_map, &idx); \
+		if (n_bins_ptr) { \
+			__u64 (*bin_edges)[MAX_BINS] = bpf_map_lookup_elem(&bin_edges_map, &idx); \
+			if (bin_edges) { \
+				s64 (*weights)[MAX_BINS] = bpf_map_lookup_elem(&nn_weights_map, &idx); \
+				if (weights) { \
+					__u8 n_bins = *n_bins_ptr; \
+					if (n_bins > 0 && n_bins <= MAX_BINS) { \
+						__u8 bin = discretize_feature(raw_features[feat_idx], *bin_edges, n_bins); \
+						if (bin < MAX_BINS) { \
+							score += (*weights)[bin]; \
+						} \
+					} \
+				} \
+			} \
+		} \
+	} while (0)
 
-		__u64 (*bin_edges)[MAX_BINS] = bpf_map_lookup_elem(&bin_edges_map, &feat_idx);
-		if (!bin_edges) continue;
+	PROCESS_FEATURE(0);
+	PROCESS_FEATURE(1);
+	PROCESS_FEATURE(2);
+	PROCESS_FEATURE(3);
+	PROCESS_FEATURE(4);
+	PROCESS_FEATURE(5);
+	PROCESS_FEATURE(6);
+	PROCESS_FEATURE(7);
 
-		s64 (*weights)[MAX_BINS] = bpf_map_lookup_elem(&nn_weights_map, &feat_idx);
-		if (!weights) continue;
-
-		__u8 n_bins = *n_bins_ptr;
-		if (n_bins == 0 || n_bins > MAX_BINS) continue;
-
-		__u8 bin = discretize_feature(raw_features[feat_idx], *bin_edges, n_bins);
-
-		if (bin < MAX_BINS) {
-			score += (*weights)[bin];
-		}
-	}
+#undef PROCESS_FEATURE
 
 	return score;
 }
