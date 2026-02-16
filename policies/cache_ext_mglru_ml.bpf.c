@@ -1224,36 +1224,88 @@ static inline s64 compute_ml_score(struct folio *folio) {
 	return score;
 }
 
-// Partial selection sort - only sort first 32 positions
-// Selection sort guarantees the k smallest elements are in the first k positions
+// Context for bpf_loop callbacks
+struct sort_outer_ctx {
+	struct candidate *candidates;
+	__u32 n;
+	__u32 positions;
+};
+
+struct sort_inner_ctx {
+	struct candidate *candidates;
+	__u32 n;
+	__u32 i;
+	__u32 *min_idx;
+	s64 *min_score;
+};
+
+// Inner loop callback: find minimum in range [i+1..n-1]
+static int find_min_callback(__u32 index, void *data) {
+	struct sort_inner_ctx *ctx = data;
+	__u32 j = ctx->i + 1 + index;
+
+	if (j >= ctx->n) return 1; // stop iteration
+	if (j >= MAX_CANDIDATES) return 1;
+
+	if (ctx->candidates[j].score < *ctx->min_score) {
+		*ctx->min_idx = j;
+		*ctx->min_score = ctx->candidates[j].score;
+	}
+
+	return 0; // continue
+}
+
+// Outer loop callback: process one position
+static int sort_position_callback(__u32 i, void *data) {
+	struct sort_outer_ctx *ctx = data;
+
+	if (i >= ctx->positions) return 1;
+	if (i >= ctx->n) return 1;
+
+	__u32 min_idx = i;
+	s64 min_score = ctx->candidates[i].score;
+
+	// Use bpf_loop for inner loop
+	struct sort_inner_ctx inner_ctx = {
+		.candidates = ctx->candidates,
+		.n = ctx->n,
+		.i = i,
+		.min_idx = &min_idx,
+		.min_score = &min_score,
+	};
+
+	__u32 inner_iterations = ctx->n - i - 1;
+	if (inner_iterations > MAX_CANDIDATES - i - 1)
+		inner_iterations = MAX_CANDIDATES - i - 1;
+
+	bpf_loop(inner_iterations, find_min_callback, &inner_ctx, 0);
+
+	// Swap if needed
+	if (min_idx != i) {
+		struct candidate temp = ctx->candidates[i];
+		ctx->candidates[i] = ctx->candidates[min_idx];
+		ctx->candidates[min_idx] = temp;
+	}
+
+	return 0; // continue
+}
+
+// Partial selection sort using bpf_loop to reduce verifier complexity
 static inline void sort_candidates(struct candidate *candidates, __u32 n) {
 	if (n <= 1) return;
 	if (n > MAX_CANDIDATES) n = MAX_CANDIDATES;
+
 	#define POSITIONS_TO_SORT 32
 
 	__u32 positions = n < POSITIONS_TO_SORT ? n : POSITIONS_TO_SORT;
-	for (__u32 i = 0; i < POSITIONS_TO_SORT; i++) {
-		if (i >= positions) break;
-		if (i >= n) break;
 
-		__u32 min_idx = i;
-		s64 min_score = candidates[i].score;
+	struct sort_outer_ctx ctx = {
+		.candidates = candidates,
+		.n = n,
+		.positions = positions,
+	};
 
-		for (__u32 j = i + 1; j < MAX_CANDIDATES; j++) {
-			if (j >= n) break;
-
-			if (candidates[j].score < min_score) {
-				min_idx = j;
-				min_score = candidates[j].score;
-			}
-		}
-
-		if (min_idx != i) {
-			struct candidate temp = candidates[i];
-			candidates[i] = candidates[min_idx];
-			candidates[min_idx] = temp;
-		}
-	}
+	bpf_loop(POSITIONS_TO_SORT, sort_position_callback, &ctx, 0);
 
 	#undef POSITIONS_TO_SORT
 }
