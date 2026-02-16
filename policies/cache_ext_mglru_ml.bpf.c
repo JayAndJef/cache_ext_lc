@@ -1243,22 +1243,21 @@ struct sort_inner_ctx {
 static int find_min_callback(__u32 index, void *data) {
 	struct sort_inner_ctx *ctx = data;
 
+	// Explicit bounds checking for verifier
 	if (index >= MAX_CANDIDATES) return 1;
 	if (ctx->i >= MAX_CANDIDATES) return 1;
 
 	__u32 j = ctx->i + 1 + index;
 
-	if (j >= ctx->n) return 1;
+	if (j >= ctx->n) return 1; // stop iteration
 	if (j >= MAX_CANDIDATES) return 1;
 
-	__u32 j_safe = j & (MAX_CANDIDATES - 1);
-
-	if (ctx->candidates[j_safe].score < *ctx->min_score) {
-		*ctx->min_idx = j_safe;
-		*ctx->min_score = ctx->candidates[j_safe].score;
+	if (ctx->candidates[j].score < *ctx->min_score) {
+		*ctx->min_idx = j;
+		*ctx->min_score = ctx->candidates[j].score;
 	}
 
-	return 0;
+	return 0; // continue
 }
 
 // Outer loop callback: process one position
@@ -1269,7 +1268,8 @@ static int sort_position_callback(__u32 i, void *data) {
 	if (i >= ctx->positions) return 1;
 	if (i >= ctx->n) return 1;
 
-	__u32 i_safe = i & (MAX_CANDIDATES - 1);
+	__u32 i_safe = i;
+	if (i_safe >= MAX_CANDIDATES) i_safe = MAX_CANDIDATES - 1;
 
 	__u32 min_idx = i_safe;
 	s64 min_score = ctx->candidates[i_safe].score;
