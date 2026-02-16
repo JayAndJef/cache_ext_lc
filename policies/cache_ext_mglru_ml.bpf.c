@@ -1646,32 +1646,25 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 
     #undef EVICT_LOOP_BODY
 
-	// Phase 5: Handle non-evicted candidates
-	// - Hot candidates (tier > threshold): Keep in next_gen (already there), update metadata
-	// - Cold candidates (tier <= threshold): Move back to oldest_gen to match metadata
-	// This aligns with original MGLRU semantics:
-	// - ML model decides what to evict (lowest scores)
-	// - Access bits/tier decide what to promote (hot pages)
-	// - Cold pages stay in oldest gen for reconsideration
+	// Phase 5: Update metadata for non-evicted candidates
+	// All non-evicted candidates are already in next_gen_list (moved during iteration)
+	// We need to update their metadata to match their physical location
+	// - Hot candidates (tier > threshold): Update metadata + protected stats
+	// - Cold candidates (tier <= threshold): Update metadata only
 
     #define PROMOTE_LOOP_BODY(i) \
 	do { \
 		if ((i) >= num_to_evict && (i) < num_candidates && (i) < MAX_CANDIDATES) { \
 			__u64 fkey = (*candidates)[(i)].folio_addr; \
-			struct folio *folio_ptr = (struct folio *)fkey; \
 			struct folio_metadata *meta = bpf_map_lookup_elem(&folio_metadata_map, &fkey); \
 			if (meta) { \
 				int tier  = (*candidates)[(i)].tier; \
 				int pages = (*candidates)[(i)].pages; \
-				if (tier > (int)tier_threshold) { \
-					update_nr_pages_stat(lrugen, oldest_gen, -pages); \
-					update_nr_pages_stat(lrugen, next_gen, pages); \
-					atomic_long_store(&meta->gen, next_gen); \
-					if (tier >= 1 && tier < MAX_NR_TIERS) { \
-						update_protected_stat(lrugen, tier, pages); \
-					} \
-				} else { \
-					bpf_cache_ext_list_move(oldest_gen_list, folio_ptr, false); \
+				update_nr_pages_stat(lrugen, oldest_gen, -pages); \
+				update_nr_pages_stat(lrugen, next_gen, pages); \
+				atomic_long_store(&meta->gen, next_gen); \
+				if (tier > (int)tier_threshold && tier >= 1 && tier < MAX_NR_TIERS) { \
+					update_protected_stat(lrugen, tier, pages); \
 				} \
 			} \
 		} \
