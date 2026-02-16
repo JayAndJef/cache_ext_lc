@@ -1107,17 +1107,20 @@ struct {
 
 // Discretize a feature value using bin edges
 // bin_edges contains only the INTERIOR edges (n_bins - 1 edges)
+// Unrolled version for verifier friendliness
 static inline __u8 discretize_feature(__u64 value, __u64 *bin_edges, __u8 n_bins) {
 	__u8 n_interior_edges = n_bins - 1;
 
-	// Check each interior edge
-	for (__u8 i = 0; i < n_interior_edges && i < MAX_BINS - 1; i++) {
-		if (value < bin_edges[i]) {
-			return i;  // Belongs to bin i
-		}
-	}
+	if (n_interior_edges > 0 && value < bin_edges[0]) return 0;
+	if (n_interior_edges > 1 && value < bin_edges[1]) return 1;
+	if (n_interior_edges > 2 && value < bin_edges[2]) return 2;
+	if (n_interior_edges > 3 && value < bin_edges[3]) return 3;
+	if (n_interior_edges > 4 && value < bin_edges[4]) return 4;
+	if (n_interior_edges > 5 && value < bin_edges[5]) return 5;
+	if (n_interior_edges > 6 && value < bin_edges[6]) return 6;
+	if (n_interior_edges > 7 && value < bin_edges[7]) return 7;
+	if (n_interior_edges > 8 && value < bin_edges[8]) return 8;
 
-	// Value >= all interior edges, belongs to last bin
 	return n_bins - 1;
 }
 
@@ -1199,9 +1202,8 @@ static inline s64 compute_ml_score(struct folio *folio) {
 					__u8 n_bins = *n_bins_ptr; \
 					if (n_bins > 0 && n_bins <= MAX_BINS) { \
 						__u8 bin = discretize_feature(raw_features[feat_idx], *bin_edges, n_bins); \
-						if (bin < MAX_BINS) { \
-							score += (*weights)[bin]; \
-						} \
+						if (bin >= MAX_BINS) bin = MAX_BINS - 1; \
+						score += (*weights)[bin]; \
 					} \
 				} \
 			} \
