@@ -1269,12 +1269,22 @@ static int sort_position_callback(__u32 i, void *data) {
 	if (i >= ctx->positions) return 1;
 	if (i >= ctx->n) return 1;
 
-	__u32 i_safe = i & (MAX_CANDIDATES - 1);
+	__u32 i_safe = i;
+    if (i_safe >= MAX_CANDIDATES)
+        return 1;
+
+    __u32 n = ctx->n;
+    if (n > MAX_CANDIDATES) n = MAX_CANDIDATES;
+    __u32 positions = ctx->positions;
+    if (positions > n) positions = n;
+
+    if (i_safe >= positions) return 1;
+    if (i_safe >= n) return 1;
+
     asm volatile("" : "+r"(i_safe));
 
     __u32 min_idx = i_safe;
-
-	s64 min_score = ctx->candidates[i_safe].score;
+    s64 min_score = ctx->candidates[i_safe].score;
 
 	struct sort_inner_ctx inner_ctx = {
 		.candidates = ctx->candidates,
