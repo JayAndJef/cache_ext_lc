@@ -1527,13 +1527,10 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 	int tier_threshold = get_tier_idx(lrugen);
 	update_tier_selected_stat(lrugen, tier_threshold, 1);
 
-	// relax candidates for ml
-	int candidate_tier = tier_threshold > 0 ? tier_threshold - 1 : 0;
-
 	struct eviction_metadata ev_meta = {
 		.curr_gen = oldest_gen,
 		.next_gen = next_gen,
-		.tier_threshold = candidate_tier,
+		.tier_threshold = tier_threshold,
 	};
 	set_eviction_metadata(&ev_meta);
 
