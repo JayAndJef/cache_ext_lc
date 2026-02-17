@@ -1608,8 +1608,6 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 			eviction_ctx->nr_folios_to_evict++; \
 			int tier  = (*candidates)[(i)].tier; \
 			int pages = (*candidates)[(i)].pages; \
-			update_evicted_stat(lrugen, tier, 1); \
-			update_nr_pages_stat(lrugen, oldest_gen, -pages); \
 		} \
 	} while (0)
 
@@ -1651,7 +1649,6 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 	// Phase 5: Update metadata for non-evicted candidates
 	// All non-evicted candidates are already in next_gen_list (moved during iteration)
 	// We need to update their metadata to match their physical location
-	// - Hot candidates (tier > threshold): Update metadata + protected stats
 	// - Cold candidates (tier <= threshold): Update metadata only
 
     #define PROMOTE_LOOP_BODY(i) \
@@ -1665,9 +1662,6 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 				update_nr_pages_stat(lrugen, oldest_gen, -pages); \
 				update_nr_pages_stat(lrugen, next_gen, pages); \
 				atomic_long_store(&meta->gen, next_gen); \
-				if (tier > (int)tier_threshold && tier >= 1 && tier < MAX_NR_TIERS) { \
-					update_protected_stat(lrugen, tier, pages); \
-				} \
 			} \
 		} \
 	} while (0)
