@@ -1226,6 +1226,7 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 	struct eviction_metadata *eviction_meta = get_eviction_metadata();
 	if (eviction_meta == NULL) return;
 	if (eviction_ctx->nr_folios_to_evict < eviction_ctx->request_nr_folios_to_evict) {
+        bpf_printk("only %d/%d folios, retrying", eviction_ctx->nr_folios_to_evict, eviction_ctx->request_nr_folios_to_evict);
 		min_seq = READ_ONCE(lrugen->min_seq);
 		oldest_gen = lru_gen_from_seq(min_seq);
 		next_gen = (oldest_gen + 1) % MAX_NR_GENS;
