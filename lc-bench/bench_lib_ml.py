@@ -536,10 +536,6 @@ class BenchmarkFramework(ABC):
         i = 1
         results = []
         while os.path.exists(results_file):
-            if reuse_results:
-                log.info("Will reuse existing results file %s" % results_file)
-                results = parse_results_file(results_file, self.benchresults_cls)
-                break
             log.info("Not reusing results file %s" % results_file)
             if "." in results_file:
                 filename, ext = results_file.rsplit(".", 1)
