@@ -46,7 +46,7 @@ if ! "$BASE_DIR/utils/disable-mglru.sh"; then
 fi
 
 # Run mglru_lc with the workload
-echo "Running mglru_lc with workload: $WORKLOAD_FILE"
+echo "Running mglru_ml with workload: $WORKLOAD_FILE model: $MODEL_FILE"
 python3 "$BENCH_PATH/bench_mglru_ml.py" \
 	--cpu 4 \
 	--policy-loader "$POLICY_PATH/cache_ext_mglru_ml.out" \

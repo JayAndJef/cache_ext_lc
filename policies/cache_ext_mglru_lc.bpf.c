@@ -1282,7 +1282,6 @@ void BPF_STRUCT_OPS(mglru_folio_evicted, struct folio *folio)
 		return;
 	}
 	DEFINE_LRUGEN_void;
-	bpf_printk("folio evicted");
 	// Remove tracked metadata
 	struct folio_metadata *metadata;
 	__u64 key = (__u64)folio;
