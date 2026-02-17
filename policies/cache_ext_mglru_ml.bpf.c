@@ -1607,8 +1607,6 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 			__u64 fkey = (*candidates)[(i)].folio_addr; \
 			eviction_ctx->folios_to_evict[(i)] = (struct folio *)fkey; \
 			eviction_ctx->nr_folios_to_evict++; \
-			int tier  = (*candidates)[(i)].tier; \
-			int pages = (*candidates)[(i)].pages; \
 		} \
 	} while (0)
 
@@ -1647,22 +1645,19 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 
     #undef EVICT_LOOP_BODY
 
-	// Phase 5: Update metadata for non-evicted candidates
-	// All non-evicted candidates are already in next_gen_list (moved during iteration)
-	// We need to update their metadata to match their physical location
-	// - Cold candidates (tier <= threshold): Update metadata only
+	// Phase 5: Move non-evicted candidates back to oldest_gen_list
+	// During collection, ALL candidates were moved to next_gen_list (CACHE_EXT_CONTINUE_ITER)
+	// But we only want to evict some of them - the rest should stay in oldest_gen
+	// Move them back so they can be evicted in the next round
 
     #define PROMOTE_LOOP_BODY(i) \
 	do { \
 		if ((i) >= num_to_evict && (i) < num_candidates && (i) < MAX_CANDIDATES) { \
 			__u64 fkey = (*candidates)[(i)].folio_addr; \
+			struct folio *folio = (struct folio *)fkey; \
 			struct folio_metadata *meta = bpf_map_lookup_elem(&folio_metadata_map, &fkey); \
 			if (meta) { \
-				int tier  = (*candidates)[(i)].tier; \
-				int pages = (*candidates)[(i)].pages; \
-				update_nr_pages_stat(lrugen, oldest_gen, -pages); \
-				update_nr_pages_stat(lrugen, next_gen, pages); \
-				atomic_long_store(&meta->gen, next_gen); \
+				bpf_cache_ext_list_move(oldest_gen_list, folio, false); \
 			} \
 		} \
 	} while (0)
