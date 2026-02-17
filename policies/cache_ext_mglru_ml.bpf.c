@@ -1526,6 +1526,7 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 	}
 
 	int tier_threshold = get_tier_idx(lrugen);
+	bpf_printk("tier threshold is %d", tier_threshold);
 	update_tier_selected_stat(lrugen, tier_threshold, 1);
 
 	__u32 target_candidates = eviction_ctx->request_nr_folios_to_evict * 3;
