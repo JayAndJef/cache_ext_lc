@@ -88,7 +88,6 @@ class MGLRULCBenchmark(BenchmarkFramework):
 
     def benchmark_cmd(self, config):
         cmd = [
-            "sudo",
             "cgexec",
             "-g",
             "memory:%s" % config["cgroup_name"],
