@@ -1479,7 +1479,7 @@ struct promote_ctx {
 };
 
 struct folio {};
-extern int bpf_cache_ext_list_move(u64 list, struct folio *folio, bool tail) __ksym;
+extern int bpf_cache_ext_list_move(u64 list, struct folio *folio, bool head);
 
 static __u64 promote_folio_callback(struct bpf_map *map, __u64 *key, struct promote_entry *entry, struct promote_ctx *ctx)
 {
