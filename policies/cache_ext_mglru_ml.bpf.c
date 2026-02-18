@@ -1102,6 +1102,22 @@ struct {
 	__type(value, __u32); // number of candidates collected
 } num_candidates_map SEC(".maps");
 
+// folios that should be promoted to next_gen
+struct promote_entry {
+	__u64 folio_addr;
+	__s32 pages;
+	__s32 tier;
+};
+
+#define MAX_PROMOTE_ENTRIES 256
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, MAX_PROMOTE_ENTRIES);
+	__type(key, __u64);  // folio address
+	__type(value, struct promote_entry);
+} should_promote_map SEC(".maps");
+
 ///////////////////
 // ML Functions  //
 ///////////////////
@@ -1380,33 +1396,48 @@ static int mglru_ml_collect_fn(int idx, struct cache_ext_list_node *a)
 	int tier_threshold = eviction_meta->tier_threshold;
 	int tier = lru_tier_from_refs(atomic_long_read(&meta->accesses));
 
-	if (tier > tier_threshold) {
-		update_protected_stat(lrugen, tier, folio_nr_pages(a->folio));
-		int num_pages = folio_nr_pages(a->folio);
-		update_nr_pages_stat(lrugen, eviction_meta->curr_gen, -num_pages);
-		update_nr_pages_stat(lrugen, eviction_meta->next_gen, num_pages);
-		atomic_long_store(&meta->gen, eviction_meta->next_gen);
-		return CACHE_EXT_CONTINUE_ITER;
-	}
-
-	if (folio_test_locked(a->folio) || folio_test_writeback(a->folio) ||
-	    folio_test_dirty(a->folio)) {
-		int num_pages = folio_nr_pages(a->folio);
-		update_nr_pages_stat(lrugen, eviction_meta->curr_gen, -num_pages);
-		update_nr_pages_stat(lrugen, eviction_meta->next_gen, num_pages);
-		atomic_long_store(&meta->gen, eviction_meta->next_gen);
-		return CACHE_EXT_CONTINUE_ITER;
-	}
-
-	u32 cand_key = 0;
-	__u64 fkey;
-
+	__u32 cand_key = 0;
 	__u32 *num_cand_ptr = bpf_map_lookup_elem(&num_candidates_map, &cand_key);
 	if (!num_cand_ptr) {
 		return CACHE_EXT_CONTINUE_ITER;
 	}
 
 	__u32 num_cand = *num_cand_ptr;
+
+	bool should_track_promote = (num_cand < eviction_meta->target_candidates);
+
+	// Protected pages: track for promotion if we haven't hit target yet
+	if (tier > tier_threshold) {
+		if (should_track_promote) {
+			__u64 fkey = (__u64)a->folio;
+			struct promote_entry entry = {
+				.folio_addr = fkey,
+				.pages = folio_nr_pages(a->folio),
+				.tier = tier,
+			};
+			bpf_map_update_elem(&should_promote_map, &fkey, &entry, BPF_ANY);
+			update_protected_stat(lrugen, tier, folio_nr_pages(a->folio));
+		}
+		return CACHE_EXT_CONTINUE_ITER;
+	}
+
+	// Dirty/locked pages: track for promotion if we haven't hit target yet
+	if (folio_test_locked(a->folio) || folio_test_writeback(a->folio) ||
+	    folio_test_dirty(a->folio)) {
+		if (should_track_promote) {
+			__u64 fkey = (__u64)a->folio;
+			struct promote_entry entry = {
+				.folio_addr = fkey,
+				.pages = folio_nr_pages(a->folio),
+				.tier = tier,
+			};
+			bpf_map_update_elem(&should_promote_map, &fkey, &entry, BPF_ANY);
+		}
+		return CACHE_EXT_CONTINUE_ITER;
+	}
+
+	__u64 fkey;
+
 	if (num_cand >= eviction_meta->target_candidates || num_cand >= MAX_CANDIDATES) {
 		return CACHE_EXT_STOP_ITER;
 	}
@@ -1432,6 +1463,35 @@ static int mglru_ml_collect_fn(int idx, struct cache_ext_list_node *a)
 	*num_cand_ptr = num_cand + 1;
 
 	return CACHE_EXT_CONTINUE_ITER;
+}
+
+// Callback for bpf_for_each_map_elem to promote folios
+struct promote_ctx {
+	__u64 oldest_gen;
+	__u64 next_gen;
+	struct mglru_global_metadata *lrugen;
+};
+
+static __u64 promote_folio_callback(struct bpf_map *map, __u64 *key, struct promote_entry *entry, struct promote_ctx *ctx)
+{
+	if (!entry || !ctx || !ctx->lrugen) {
+		return 0;
+	}
+
+	struct folio *folio = (void *)entry->folio_addr;
+	struct folio_metadata *meta = bpf_map_lookup_elem(&folio_metadata_map, &entry->folio_addr);
+	if (!meta) {
+		return 0;
+	}
+
+	update_nr_pages_stat(ctx->lrugen, ctx->oldest_gen, -entry->pages);
+	update_nr_pages_stat(ctx->lrugen, ctx->next_gen, entry->pages);
+	atomic_long_store(&meta->gen, ctx->next_gen);
+
+	__u64 next_gen_list = mglru_lists[ctx->next_gen & (MAX_NR_GENS - 1)];
+	bpf_cache_ext_list_move(next_gen_list, folio, true);
+
+	return 0;
 }
 
 // Original MGLRU iteration function (kept for fallback)
@@ -1557,7 +1617,7 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 	__u64 oldest_gen_list = mglru_lists[oldest_gen_safe];
 
 	struct cache_ext_iterate_opts collect_opts = {
-		.continue_list = next_gen_list,
+		.continue_list = CACHE_EXT_ITERATE_SELF,
 		.continue_mode = CACHE_EXT_ITERATE_TAIL,
 		.evict_list = CACHE_EXT_ITERATE_SELF,
 		.evict_mode = CACHE_EXT_ITERATE_TAIL,
@@ -1607,8 +1667,6 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 			__u64 fkey = (*candidates)[(i)].folio_addr; \
 			eviction_ctx->folios_to_evict[(i)] = (struct folio *)fkey; \
 			eviction_ctx->nr_folios_to_evict++; \
-			int tier  = (*candidates)[(i)].tier; \
-			int pages = (*candidates)[(i)].pages; \
 		} \
 	} while (0)
 
@@ -1647,124 +1705,15 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 
     #undef EVICT_LOOP_BODY
 
-	// Phase 5: Update metadata for non-evicted candidates
-	// All non-evicted candidates are already in next_gen_list (moved during iteration)
-	// We need to update their metadata to match their physical location
-	// - Cold candidates (tier <= threshold): Update metadata only
+	// Phase 5: Promote protected/dirty folios to next_gen
+	// Use bpf_for_each_map_elem to iterate over should_promote_map
+	struct promote_ctx promote_ctx = {
+		.oldest_gen = oldest_gen,
+		.next_gen = next_gen,
+		.lrugen = lrugen,
+	};
 
-    #define PROMOTE_LOOP_BODY(i) \
-	do { \
-		if ((i) >= num_to_evict && (i) < num_candidates && (i) < MAX_CANDIDATES) { \
-			__u64 fkey = (*candidates)[(i)].folio_addr; \
-			struct folio_metadata *meta = bpf_map_lookup_elem(&folio_metadata_map, &fkey); \
-			if (meta) { \
-				int tier  = (*candidates)[(i)].tier; \
-				int pages = (*candidates)[(i)].pages; \
-				update_nr_pages_stat(lrugen, oldest_gen, -pages); \
-				update_nr_pages_stat(lrugen, next_gen, pages); \
-				atomic_long_store(&meta->gen, next_gen); \
-			} \
-		} \
-	} while (0)
-
-	PROMOTE_LOOP_BODY(0);
-	PROMOTE_LOOP_BODY(1);
-	PROMOTE_LOOP_BODY(2);
-	PROMOTE_LOOP_BODY(3);
-	PROMOTE_LOOP_BODY(4);
-	PROMOTE_LOOP_BODY(5);
-	PROMOTE_LOOP_BODY(6);
-	PROMOTE_LOOP_BODY(7);
-	PROMOTE_LOOP_BODY(8);
-	PROMOTE_LOOP_BODY(9);
-	PROMOTE_LOOP_BODY(10);
-	PROMOTE_LOOP_BODY(11);
-	PROMOTE_LOOP_BODY(12);
-	PROMOTE_LOOP_BODY(13);
-	PROMOTE_LOOP_BODY(14);
-	PROMOTE_LOOP_BODY(15);
-	PROMOTE_LOOP_BODY(16);
-	PROMOTE_LOOP_BODY(17);
-	PROMOTE_LOOP_BODY(18);
-	PROMOTE_LOOP_BODY(19);
-	PROMOTE_LOOP_BODY(20);
-	PROMOTE_LOOP_BODY(21);
-	PROMOTE_LOOP_BODY(22);
-	PROMOTE_LOOP_BODY(23);
-	PROMOTE_LOOP_BODY(24);
-	PROMOTE_LOOP_BODY(25);
-	PROMOTE_LOOP_BODY(26);
-	PROMOTE_LOOP_BODY(27);
-	PROMOTE_LOOP_BODY(28);
-	PROMOTE_LOOP_BODY(29);
-	PROMOTE_LOOP_BODY(30);
-	PROMOTE_LOOP_BODY(31);
-	PROMOTE_LOOP_BODY(32);
-	PROMOTE_LOOP_BODY(33);
-	PROMOTE_LOOP_BODY(34);
-	PROMOTE_LOOP_BODY(35);
-	PROMOTE_LOOP_BODY(36);
-	PROMOTE_LOOP_BODY(37);
-	PROMOTE_LOOP_BODY(38);
-	PROMOTE_LOOP_BODY(39);
-	PROMOTE_LOOP_BODY(40);
-	PROMOTE_LOOP_BODY(41);
-	PROMOTE_LOOP_BODY(42);
-	PROMOTE_LOOP_BODY(43);
-	PROMOTE_LOOP_BODY(44);
-	PROMOTE_LOOP_BODY(45);
-	PROMOTE_LOOP_BODY(46);
-	PROMOTE_LOOP_BODY(47);
-	PROMOTE_LOOP_BODY(48);
-	PROMOTE_LOOP_BODY(49);
-	PROMOTE_LOOP_BODY(50);
-	PROMOTE_LOOP_BODY(51);
-	PROMOTE_LOOP_BODY(52);
-	PROMOTE_LOOP_BODY(53);
-	PROMOTE_LOOP_BODY(54);
-	PROMOTE_LOOP_BODY(55);
-	PROMOTE_LOOP_BODY(56);
-	PROMOTE_LOOP_BODY(57);
-	PROMOTE_LOOP_BODY(58);
-	PROMOTE_LOOP_BODY(59);
-	PROMOTE_LOOP_BODY(60);
-	PROMOTE_LOOP_BODY(61);
-	PROMOTE_LOOP_BODY(62);
-	PROMOTE_LOOP_BODY(63);
-	PROMOTE_LOOP_BODY(64);
-	PROMOTE_LOOP_BODY(65);
-	PROMOTE_LOOP_BODY(66);
-	PROMOTE_LOOP_BODY(67);
-	PROMOTE_LOOP_BODY(68);
-	PROMOTE_LOOP_BODY(69);
-	PROMOTE_LOOP_BODY(70);
-	PROMOTE_LOOP_BODY(71);
-	PROMOTE_LOOP_BODY(72);
-	PROMOTE_LOOP_BODY(73);
-	PROMOTE_LOOP_BODY(74);
-	PROMOTE_LOOP_BODY(75);
-	PROMOTE_LOOP_BODY(76);
-	PROMOTE_LOOP_BODY(77);
-	PROMOTE_LOOP_BODY(78);
-	PROMOTE_LOOP_BODY(79);
-	PROMOTE_LOOP_BODY(80);
-	PROMOTE_LOOP_BODY(81);
-	PROMOTE_LOOP_BODY(82);
-	PROMOTE_LOOP_BODY(83);
-	PROMOTE_LOOP_BODY(84);
-	PROMOTE_LOOP_BODY(85);
-	PROMOTE_LOOP_BODY(86);
-	PROMOTE_LOOP_BODY(87);
-	PROMOTE_LOOP_BODY(88);
-	PROMOTE_LOOP_BODY(89);
-	PROMOTE_LOOP_BODY(90);
-	PROMOTE_LOOP_BODY(91);
-	PROMOTE_LOOP_BODY(92);
-	PROMOTE_LOOP_BODY(93);
-	PROMOTE_LOOP_BODY(94);
-	PROMOTE_LOOP_BODY(95);
-
-    #undef PROMOTE_LOOP_BODY
+	bpf_for_each_map_elem(&should_promote_map, promote_folio_callback, &promote_ctx, 0);
 
 	s64 success_evicted = eviction_ctx->nr_folios_to_evict;
 	s64 failed_evicted = max(0, eviction_ctx->request_nr_folios_to_evict - eviction_ctx->nr_folios_to_evict);
