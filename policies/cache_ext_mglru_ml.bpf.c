@@ -3,9 +3,7 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 
-#define bpf_cache_ext_list_move bpf_cache_ext_move_lib_hidden
 #include "cache_ext_lib.bpf.h"
-#undef bpf_cache_ext_list_move
 #include "dir_watcher.bpf.h"
 
 char _license[] SEC("license") = "GPL";
