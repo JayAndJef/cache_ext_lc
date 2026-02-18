@@ -1474,7 +1474,7 @@ struct promote_ctx {
 	struct mglru_global_metadata *lrugen;
 };
 
-struct folio_shadow {} __attribute__((btf_type_tag("folio")));
+typedef struct folio_shadow folio_shadow;
 
 extern int bpf_cache_ext_list_move(__u64 list, struct folio_shadow *folio, bool move_head) __ksym;
 
