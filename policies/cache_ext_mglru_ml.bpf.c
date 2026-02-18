@@ -1,15 +1,11 @@
-#define folio folio_vmlinux_heavy
 #include "vmlinux.h"
-#undef folio
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 
-#define folio folio_vmlinux_heavy
-#define bpf_cache_ext_list_move bpf_cache_ext_list_move_vmlinux_heavy
+#define bpf_cache_ext_list_move bpf_cache_ext_move_lib_hidden
 #include "cache_ext_lib.bpf.h"
 #undef bpf_cache_ext_list_move
-#undef folio
 #include "dir_watcher.bpf.h"
 
 char _license[] SEC("license") = "GPL";
@@ -70,7 +66,7 @@ struct ghost_entry {
 	u64 offset;
 };
 
-static inline void insert_ghost_entry_for_folio(struct folio_vmlinux_heavy *folio, int tier) {
+static inline void insert_ghost_entry_for_folio(struct folio *folio, int tier) {
 	struct ghost_entry ghost_key = {
 		.address_space = (u64)folio->mapping->host,
 		.offset = folio->index,
@@ -85,7 +81,7 @@ static inline void insert_ghost_entry_for_folio(struct folio_vmlinux_heavy *foli
  * We only check if an element is in the ghost map on inserting into the cache.
  * Relies on bpf_map_delete_elem() returning -ENOENT if the element is not found.
  */
-static inline int folio_in_ghost(struct folio_vmlinux_heavy *folio) {
+static inline int folio_in_ghost(struct folio *folio) {
 	struct ghost_entry key = {
 		.address_space = (u64)folio->mapping->host,
 		.offset = folio->index,
@@ -376,7 +372,7 @@ static inline int get_tier_idx(struct mglru_global_metadata *lrugen)
 // 	return 0;
 // }
 
-static inline void folio_inc_refs(struct folio_vmlinux_heavy *folio)
+static inline void folio_inc_refs(struct folio *folio)
 {
 	struct folio_metadata *metadata;
 	__u64 key = (__u64)folio;
@@ -390,7 +386,7 @@ static inline void folio_inc_refs(struct folio_vmlinux_heavy *folio)
 	__sync_fetch_and_add(&metadata->accesses, 1);
 }
 
-static inline int folio_lru_refs(struct folio_vmlinux_heavy *folio)
+static inline int folio_lru_refs(struct folio *folio)
 {
 	struct folio_metadata *metadata;
 	__u64 key = (__u64)folio;
@@ -407,7 +403,7 @@ static inline unsigned int lru_gen_from_seq(unsigned long seq)
 	return seq % MAX_NR_GENS;
 }
 
-static inline bool folio_test_active(struct folio_vmlinux_heavy *folio)
+static inline bool folio_test_active(struct folio *folio)
 {
 	return folio_lru_refs(folio) >= 2;
 }
@@ -455,7 +451,7 @@ static inline bool gen_almost_empty(struct mglru_global_metadata *lrugen,
 }
 
 // TODO: This is supposed to run with a lock.
-static inline bool lru_gen_add_folio(struct folio_vmlinux_heavy *folio)
+static inline bool lru_gen_add_folio(struct folio *folio)
 {
 	unsigned long seq;
 	if (folio_test_unevictable(folio)) {
@@ -727,7 +723,7 @@ void set_eviction_metadata(struct eviction_metadata *eviction_meta) {
 	}
 }
 
-inline bool is_folio_relevant(struct folio_vmlinux_heavy *folio)
+inline bool is_folio_relevant(struct folio *folio)
 {
 	if (!folio) {
 		return false;
@@ -808,25 +804,25 @@ int send_insertion_log(struct cache_insertion_event *event) {
     return 0;
 }
 
-static inline u32 get_folio_dev(struct folio_vmlinux_heavy *folio) {
+static inline u32 get_folio_dev(struct folio *folio) {
 	if (!folio || !folio->mapping || !folio->mapping->host || !folio->mapping->host->i_sb)
 		return 0;
 	return folio->mapping->host->i_sb->s_dev;
 }
 
-static inline u64 get_folio_ino(struct folio_vmlinux_heavy *folio) {
+static inline u64 get_folio_ino(struct folio *folio) {
 	if (!folio || !folio->mapping || !folio->mapping->host)
 		return 0;
 	return folio->mapping->host->i_ino;
 }
 
-static inline u64 get_folio_file_size(struct folio_vmlinux_heavy *folio) {
+static inline u64 get_folio_file_size(struct folio *folio) {
 	if (!folio || !folio->mapping || !folio->mapping->host)
 		return 0;
 	return folio->mapping->host->i_size;
 }
 
-static inline void track_folio_access(struct folio_vmlinux_heavy *folio) {
+static inline void track_folio_access(struct folio *folio) {
 	u32 s_dev = get_folio_dev(folio);
 	u64 i_ino = get_folio_ino(folio);
 	u64 file_size = get_folio_file_size(folio);
@@ -985,7 +981,7 @@ static inline void track_folio_access(struct folio_vmlinux_heavy *folio) {
 }
 
 // track folio insertion
-static inline void track_folio_insertion(struct folio_vmlinux_heavy *folio) {
+static inline void track_folio_insertion(struct folio *folio) {
    	u32 s_dev = get_folio_dev(folio);
 	u64 i_ino = get_folio_ino(folio);
 	u64 index = folio->index;
@@ -1148,7 +1144,7 @@ static inline __u8 discretize_feature(__u64 value, __u64 *bin_edges, __u8 n_bins
 }
 
 // Extract features for a folio and compute ML score
-static inline s64 compute_ml_score(struct folio_vmlinux_heavy *folio) {
+static inline s64 compute_ml_score(struct folio *folio) {
 	u32 s_dev = get_folio_dev(folio);
 	u64 i_ino = get_folio_ino(folio);
 	u64 index = folio->index;
@@ -1392,7 +1388,7 @@ static int mglru_ml_collect_fn(int idx, struct cache_ext_list_node *a)
 	eviction_meta->iter_reached = idx;
 
 	// Get folio metadata
-	__u64 key = (__u64)a->folio_vmlinux_heavy;
+	__u64 key = (__u64)a->folio;
 	struct folio_metadata *meta = bpf_map_lookup_elem(&folio_metadata_map, &key);
 	if (!meta) {
 		bpf_printk("cache_ext: ml_collect: Failed to lookup folio metadata\n");
@@ -1415,26 +1411,26 @@ static int mglru_ml_collect_fn(int idx, struct cache_ext_list_node *a)
 	// Protected pages: track for promotion if we haven't hit target yet
 	if (tier > tier_threshold) {
 		if (should_track_promote) {
-			__u64 fkey = (__u64)a->folio_vmlinux_heavy;
+			__u64 fkey = (__u64)a->folio;
 			struct promote_entry entry = {
 				.folio_addr = fkey,
-				.pages = folio_nr_pages(a->folio_vmlinux_heavy),
+				.pages = folio_nr_pages(a->folio),
 				.tier = tier,
 			};
 			bpf_map_update_elem(&should_promote_map, &fkey, &entry, BPF_ANY);
-			update_protected_stat(lrugen, tier, folio_nr_pages(a->folio_vmlinux_heavy));
+			update_protected_stat(lrugen, tier, folio_nr_pages(a->folio));
 		}
 		return CACHE_EXT_CONTINUE_ITER;
 	}
 
 	// Dirty/locked pages: track for promotion if we haven't hit target yet
-	if (folio_test_locked(a->folio_vmlinux_heavy) || folio_test_writeback(a->folio_vmlinux_heavy) ||
-	    folio_test_dirty(a->folio_vmlinux_heavy)) {
+	if (folio_test_locked(a->folio) || folio_test_writeback(a->folio) ||
+	    folio_test_dirty(a->folio)) {
 		if (should_track_promote) {
-			__u64 fkey = (__u64)a->folio_vmlinux_heavy;
+			__u64 fkey = (__u64)a->folio;
 			struct promote_entry entry = {
 				.folio_addr = fkey,
-				.pages = folio_nr_pages(a->folio_vmlinux_heavy),
+				.pages = folio_nr_pages(a->folio),
 				.tier = tier,
 			};
 			bpf_map_update_elem(&should_promote_map, &fkey, &entry, BPF_ANY);
@@ -1459,12 +1455,12 @@ static int mglru_ml_collect_fn(int idx, struct cache_ext_list_node *a)
 		: [mask] "i" (MAX_CANDIDATES - 1)
 	);
 
-	fkey = (__u64)a->folio_vmlinux_heavy;
+	fkey = (__u64)a->folio;
 	(*candidates)[num_cand].folio_addr = fkey;
-	(*candidates)[num_cand].pages      = folio_nr_pages(a->folio_vmlinux_heavy);
+	(*candidates)[num_cand].pages      = folio_nr_pages(a->folio);
 	(*candidates)[num_cand].tier       =
 		lru_tier_from_refs(atomic_long_read(&meta->accesses));
-	(*candidates)[num_cand].score      = compute_ml_score(a->folio_vmlinux_heavy);
+	(*candidates)[num_cand].score      = compute_ml_score(a->folio);
 
 	*num_cand_ptr = num_cand + 1;
 
@@ -1478,8 +1474,9 @@ struct promote_ctx {
 	struct mglru_global_metadata *lrugen;
 };
 
-struct folio {};
-extern int bpf_cache_ext_list_move(u64 list, struct folio *folio, bool head);
+typedef struct folio_shadow folio_shadow;
+
+extern int bpf_cache_ext_list_move(__u64 list, struct folio_shadow *folio, bool move_head) __ksym;
 
 static __u64 promote_folio_callback(struct bpf_map *map, __u64 *key, struct promote_entry *entry, struct promote_ctx *ctx)
 {
@@ -1487,7 +1484,7 @@ static __u64 promote_folio_callback(struct bpf_map *map, __u64 *key, struct prom
 		return 0;
 	}
 
-	struct folio *folio = (void *)entry->folio_addr;
+	struct folio_shadow *folio = (void *)entry->folio_addr;
 	struct folio_metadata *meta = bpf_map_lookup_elem(&folio_metadata_map, &entry->folio_addr);
 	if (!meta) {
 		return 0;
@@ -1523,7 +1520,7 @@ static int mglru_iter_fn(int idx, struct cache_ext_list_node *a)
 	eviction_meta->iter_reached = idx;
 
 	// Get folio metadata
-	__u64 key = (__u64)a->folio_vmlinux_heavy;
+	__u64 key = (__u64)a->folio;
 	struct folio_metadata *meta =
 		bpf_map_lookup_elem(&folio_metadata_map, &key);
 	if (!meta) {
@@ -1541,10 +1538,10 @@ static int mglru_iter_fn(int idx, struct cache_ext_list_node *a)
 
 	/* protected */
 	if (tier > tier_threshold) {
-		update_protected_stat(lrugen, tier, folio_nr_pages(a->folio_vmlinux_heavy));
+		update_protected_stat(lrugen, tier, folio_nr_pages(a->folio));
 		// promote to next gen
 		// TODO: Update nr_pages stats
-		int num_pages = folio_nr_pages(a->folio_vmlinux_heavy);
+		int num_pages = folio_nr_pages(a->folio);
 		update_nr_pages_stat(lrugen, eviction_meta->curr_gen, -num_pages);
 		update_nr_pages_stat(lrugen, eviction_meta->next_gen, num_pages);
 		atomic_long_store(&meta->gen, eviction_meta->next_gen);
@@ -1552,10 +1549,10 @@ static int mglru_iter_fn(int idx, struct cache_ext_list_node *a)
 	}
 
 	/* waiting for writeback */
-	if (folio_test_locked(a->folio_vmlinux_heavy) || folio_test_writeback(a->folio_vmlinux_heavy) ||
-	    folio_test_dirty(a->folio_vmlinux_heavy)) {
+	if (folio_test_locked(a->folio) || folio_test_writeback(a->folio) ||
+	    folio_test_dirty(a->folio)) {
 		// promote to next gen
-		int num_pages = folio_nr_pages(a->folio_vmlinux_heavy);
+		int num_pages = folio_nr_pages(a->folio);
 		update_nr_pages_stat(lrugen, eviction_meta->curr_gen, -num_pages);
 		update_nr_pages_stat(lrugen, eviction_meta->next_gen, num_pages);
 		atomic_long_store(&meta->gen, eviction_meta->next_gen);
@@ -1674,7 +1671,7 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 	do { \
 		if ((i) < num_to_evict && (i) < 32) { \
 			__u64 fkey = (*candidates)[(i)].folio_addr; \
-			eviction_ctx->folios_to_evict[(i)] = (struct folio_vmlinux_heavy *)fkey; \
+			eviction_ctx->folios_to_evict[(i)] = (struct folio *)fkey; \
 			eviction_ctx->nr_folios_to_evict++; \
 		} \
 	} while (0)
@@ -1736,7 +1733,7 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 	}
 }
 
-void BPF_STRUCT_OPS(mglru_folio_added, struct folio_vmlinux_heavy *folio)
+void BPF_STRUCT_OPS(mglru_folio_added, struct folio *folio)
 {
 	if (!is_folio_relevant(folio)) {
 		return;
@@ -1745,7 +1742,7 @@ void BPF_STRUCT_OPS(mglru_folio_added, struct folio_vmlinux_heavy *folio)
 	lru_gen_add_folio(folio);
 }
 
-void BPF_STRUCT_OPS(mglru_folio_accessed, struct folio_vmlinux_heavy *folio)
+void BPF_STRUCT_OPS(mglru_folio_accessed, struct folio *folio)
 {
 	if (!is_folio_relevant(folio)) {
 		return;
@@ -1754,7 +1751,7 @@ void BPF_STRUCT_OPS(mglru_folio_accessed, struct folio_vmlinux_heavy *folio)
 	folio_inc_refs(folio);
 }
 
-void BPF_STRUCT_OPS(mglru_folio_evicted, struct folio_vmlinux_heavy *folio)
+void BPF_STRUCT_OPS(mglru_folio_evicted, struct folio *folio)
 {
 	if (!is_folio_relevant(folio)) {
 		return;
