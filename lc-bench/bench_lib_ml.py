@@ -40,6 +40,7 @@ class CacheExtPolicy:
 
         self.has_started = True
         cmd = [
+            "sudo",
             self.loader_path,
             "--watch_dir",
             self.watch_dir,
@@ -72,13 +73,13 @@ class CacheExtPolicy:
             raise Exception("Policy not started")
 
         if self._policy_thread.poll() is None:
-            cmd = ["kill", "-9", str(self._policy_thread.pid)]
+            cmd = ["sudo", "kill", "-9", str(self._policy_thread.pid)]
             run(cmd)
 
         out, err = self._policy_thread.communicate()
 
         with suppress(subprocess.CalledProcessError):
-            run(["rm", "/sys/fs/bpf/cache_ext/scan_pids"])
+            run(["sudo", "rm", "/sys/fs/bpf/cache_ext/scan_pids"])
 
         if out is not None:
             log.info("Policy thread stdout: %s", out.decode("utf-8"))
@@ -236,17 +237,18 @@ def enable_cache_ext_for_cgroup(cgroup=DEFAULT_CACHE_EXT_CGROUP):
 
 def delete_cgroup(cgroup):
     with suppress(subprocess.CalledProcessError):
-        run(["cgdelete", f"memory:{cgroup}"])
+        run(["sudo", "cgdelete", f"memory:{cgroup}"])
 
 
 def recreate_cache_ext_cgroup(cgroup=DEFAULT_CACHE_EXT_CGROUP, limit_in_bytes=4 * GiB):
     delete_cgroup(cgroup)
     # Create cache_ext cgroup
-    run(["cgcreate", "-g", f"memory:{cgroup}"])
+    run(["sudo", "cgcreate", "-g", f"memory:{cgroup}"])
 
     # Set memory limit for cache_ext cgroup
     run(
         [
+            "sudo",
             "sh",
             "-c",
             "echo %d > /sys/fs/cgroup/%s/memory.max" % (limit_in_bytes, cgroup),
@@ -263,11 +265,12 @@ def recreate_cache_ext_cgroup(cgroup=DEFAULT_CACHE_EXT_CGROUP, limit_in_bytes=4 
 def recreate_baseline_cgroup(cgroup=DEFAULT_BASELINE_CGROUP, limit_in_bytes=4 * GiB):
     delete_cgroup(cgroup)
     # Create baseline cgroup
-    run(["cgcreate", "-g", f"memory:{cgroup}"])
+    run(["sudo", "cgcreate", "-g", f"memory:{cgroup}"])
 
     # Set memory limit for baseline cgroup
     run(
         [
+            "sudo",
             "sh",
             "-c",
             "echo %d > /sys/fs/cgroup/%s/memory.max" % (limit_in_bytes, cgroup),
@@ -276,16 +279,16 @@ def recreate_baseline_cgroup(cgroup=DEFAULT_BASELINE_CGROUP, limit_in_bytes=4 * 
 
 
 def drop_page_cache():
-    run(["sync"])
-    run(["sh", "-c", "echo 1 > /proc/sys/vm/drop_caches"])
+    run(["sudo", "sync"])
+    run(["sudo", "sh", "-c", "echo 1 > /proc/sys/vm/drop_caches"])
 
 
 def set_sysctl(key: str, value: Union[int, str]):
-    run(["sysctl", "-w", f"{key}={value}"])
+    run(["sudo", "sysctl", "-w", f"{key}={value}"])
 
 
 def disable_swap():
-    run(["swapoff", "-a"])
+    run(["sudo", "swapoff", "-a"])
 
 
 def disable_smt():
