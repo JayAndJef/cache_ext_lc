@@ -44,4 +44,4 @@ define process name=rand-read,instances=1
 
 echo "Random Read Version 3.0 personality successfully loaded"
 set mode quit alldone
-run 60
+run 120
