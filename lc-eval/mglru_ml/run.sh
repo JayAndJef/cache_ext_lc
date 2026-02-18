@@ -47,7 +47,7 @@ fi
 
 # Run mglru_lc with the workload
 echo "Running mglru_ml with workload: $WORKLOAD_FILE model: $MODEL_FILE"
-sudo python3 "$BENCH_PATH/bench_mglru_ml.py" \
+python3 "$BENCH_PATH/bench_mglru_ml.py" \
 	--cpu 4 \
 	--policy-loader "$POLICY_PATH/cache_ext_mglru_ml.out" \
 	--results-file "$RESULTS_PATH/mglru_lc_results.json" \
