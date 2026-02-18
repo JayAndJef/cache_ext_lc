@@ -29,7 +29,7 @@ set $iosize=8k
 set $nthreads=1
 set $workingset=0
 set $directio=0
-set $count=100   # total reads to stop on
+set $count=1000   # total reads to stop on
 
 define file name=largefile1,path=$dir,size=$filesize,prealloc,reuse,paralloc
 
@@ -44,4 +44,4 @@ define process name=rand-read,instances=1
 
 echo "Random Read Version 3.0 personality successfully loaded"
 set mode quit alldone
-run 60
+run 120
