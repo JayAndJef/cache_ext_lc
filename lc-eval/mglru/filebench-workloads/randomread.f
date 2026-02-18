@@ -29,7 +29,7 @@ set $iosize=8k
 set $nthreads=1
 set $workingset=0
 set $directio=0
-set $iters=10000
+set $iters=100
 
 define file name=largefile1,path=$dir,size=$filesize,prealloc,reuse,paralloc
 
