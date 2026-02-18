@@ -3,7 +3,9 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 
+#define bpf_cache_ext_list_move bpf_cache_ext_move_lib_hidden
 #include "cache_ext_lib.bpf.h"
+#undef bpf_cache_ext_list_move
 #include "dir_watcher.bpf.h"
 
 char _license[] SEC("license") = "GPL";
@@ -1472,13 +1474,17 @@ struct promote_ctx {
 	struct mglru_global_metadata *lrugen;
 };
 
+struct folio_shadow {} __attribute__((btf_type_tag("folio")));
+
+extern int bpf_cache_ext_list_move(__u64 list, struct folio_shadow *folio, bool move_head) __ksym;
+
 static __u64 promote_folio_callback(struct bpf_map *map, __u64 *key, struct promote_entry *entry, struct promote_ctx *ctx)
 {
 	if (!entry || !ctx || !ctx->lrugen) {
 		return 0;
 	}
 
-	struct folio *folio = (void *)entry->folio_addr;
+	struct folio_shadow *folio = (void *)entry->folio_addr;
 	struct folio_metadata *meta = bpf_map_lookup_elem(&folio_metadata_map, &entry->folio_addr);
 	if (!meta) {
 		return 0;
