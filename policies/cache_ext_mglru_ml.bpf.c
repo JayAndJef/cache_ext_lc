@@ -1618,7 +1618,7 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 
 	struct cache_ext_iterate_opts collect_opts = {
 		.continue_list = CACHE_EXT_ITERATE_SELF,
-		.continue_mode = CACHE_EXT_ITERATE_TAIL,
+		.continue_mode = CACHE_EXT_ITERATE_HEAD,
 		.evict_list = CACHE_EXT_ITERATE_SELF,
 		.evict_mode = CACHE_EXT_ITERATE_TAIL,
 	};
