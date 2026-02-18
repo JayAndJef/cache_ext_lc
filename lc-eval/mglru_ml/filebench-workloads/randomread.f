@@ -29,6 +29,7 @@ set $iosize=8k
 set $nthreads=1
 set $workingset=0
 set $directio=0
+set $iters=10000
 
 define file name=largefile1,path=$dir,size=$filesize,prealloc,reuse,paralloc
 
@@ -36,9 +37,10 @@ define process name=rand-read,instances=1
 {
   thread name=rand-thread,memsize=5m,instances=$nthreads
   {
-    flowop read name=rand-read1,filename=largefile1,iosize=$iosize,random,workingset=$workingset,directio=$directio
+    flowop read name=rand-read1,filename=largefile1,iosize=$iosize,random,workingset=$workingset,directio=$directio,iters=$iters
   }
 }
 
 echo "Random Read Version 3.0 personality successfully loaded"
+set mode quit firstdone
 run 60

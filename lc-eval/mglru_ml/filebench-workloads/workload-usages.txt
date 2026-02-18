@@ -1,3 +1,0 @@
-openfiles=159707136
-mongo=86245376
-randomread>1073627136 <- ran using 1GiB cgroup, definitly forces eviction
