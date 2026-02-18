@@ -1104,22 +1104,6 @@ struct {
 	__type(value, __u32); // number of candidates collected
 } num_candidates_map SEC(".maps");
 
-// folios that should be promoted to next_gen
-struct promote_entry {
-	__u64 folio_addr;
-	__s32 pages;
-	__s32 tier;
-};
-
-#define MAX_PROMOTE_ENTRIES 256
-
-struct {
-	__uint(type, BPF_MAP_TYPE_HASH);
-	__uint(max_entries, MAX_PROMOTE_ENTRIES);
-	__type(key, __u64);  // folio address
-	__type(value, struct promote_entry);
-} should_promote_map SEC(".maps");
-
 ///////////////////
 // ML Functions  //
 ///////////////////
@@ -1377,13 +1361,13 @@ static int mglru_ml_collect_fn(int idx, struct cache_ext_list_node *a)
 	lrugen = bpf_map_lookup_elem(&mglru_global_metadata_map, &key__);
 	if (!lrugen) {
 		bpf_printk("cache_ext: Failed to lookup lrugen metadata\n");
-		return CACHE_EXT_CONTINUE_ITER;
+		return CACHE_EXT_SKIP_NODE;
 	}
 
 	struct eviction_metadata *eviction_meta = get_eviction_metadata();
 	if (!eviction_meta) {
 		bpf_printk("cache_ext: ml_collect: Failed to get eviction metadata\n");
-		return CACHE_EXT_CONTINUE_ITER;
+		return CACHE_EXT_SKIP_NODE;
 	}
 	eviction_meta->iter_reached = idx;
 
@@ -1392,7 +1376,7 @@ static int mglru_ml_collect_fn(int idx, struct cache_ext_list_node *a)
 	struct folio_metadata *meta = bpf_map_lookup_elem(&folio_metadata_map, &key);
 	if (!meta) {
 		bpf_printk("cache_ext: ml_collect: Failed to lookup folio metadata\n");
-		return CACHE_EXT_CONTINUE_ITER;
+		return CACHE_EXT_SKIP_NODE;
 	}
 
 	int tier_threshold = eviction_meta->tier_threshold;
@@ -1401,52 +1385,49 @@ static int mglru_ml_collect_fn(int idx, struct cache_ext_list_node *a)
 	__u32 cand_key = 0;
 	__u32 *num_cand_ptr = bpf_map_lookup_elem(&num_candidates_map, &cand_key);
 	if (!num_cand_ptr) {
-		return CACHE_EXT_CONTINUE_ITER;
+		bpf_printk("cache_ext: ml_collect: Failed to lookup num_candidates_map\n");
+		return CACHE_EXT_SKIP_NODE;
 	}
 
 	__u32 num_cand = *num_cand_ptr;
-
-	bool should_track_promote = (num_cand < eviction_meta->target_candidates);
-
-	// Protected pages: track for promotion if we haven't hit target yet
-	if (tier > tier_threshold) {
-		if (should_track_promote) {
-			__u64 fkey = (__u64)a->folio;
-			struct promote_entry entry = {
-				.folio_addr = fkey,
-				.pages = folio_nr_pages(a->folio),
-				.tier = tier,
-			};
-			bpf_map_update_elem(&should_promote_map, &fkey, &entry, BPF_ANY);
-			update_protected_stat(lrugen, tier, folio_nr_pages(a->folio));
-		}
-		return CACHE_EXT_CONTINUE_ITER;
-	}
-
-	// Dirty/locked pages: track for promotion if we haven't hit target yet
-	if (folio_test_locked(a->folio) || folio_test_writeback(a->folio) ||
-	    folio_test_dirty(a->folio)) {
-		if (should_track_promote) {
-			__u64 fkey = (__u64)a->folio;
-			struct promote_entry entry = {
-				.folio_addr = fkey,
-				.pages = folio_nr_pages(a->folio),
-				.tier = tier,
-			};
-			bpf_map_update_elem(&should_promote_map, &fkey, &entry, BPF_ANY);
-		}
-		return CACHE_EXT_CONTINUE_ITER;
-	}
-
-	__u64 fkey;
 
 	if (num_cand >= eviction_meta->target_candidates || num_cand >= MAX_CANDIDATES) {
 		return CACHE_EXT_STOP_ITER;
 	}
 
+	bool should_promote_protected = (num_cand < (eviction_meta->target_candidates / 3));
+
+	// Protected pages: promote if we haven't hit target yet
+	if (tier > tier_threshold) {
+		if (should_promote_protected) {
+    		int num_pages = folio_nr_pages(a->folio);
+    		update_nr_pages_stat(lrugen, eviction_meta->curr_gen, -num_pages);
+    		update_nr_pages_stat(lrugen, eviction_meta->next_gen, num_pages);
+    		atomic_long_store(&meta->gen, eviction_meta->next_gen);
+		    update_protected_stat(lrugen, tier, folio_nr_pages(a->folio));
+			return CACHE_EXT_CONTINUE_ITER;
+		}
+		return CACHE_EXT_SKIP_NODE;
+	}
+
+	// Dirty/locked pages: track for promotion if we haven't hit target yet
+	if (folio_test_locked(a->folio) || folio_test_writeback(a->folio) ||
+	    folio_test_dirty(a->folio)) {
+		if (should_promote_protected) {
+			int num_pages = folio_nr_pages(a->folio);
+    		update_nr_pages_stat(lrugen, eviction_meta->curr_gen, -num_pages);
+    		update_nr_pages_stat(lrugen, eviction_meta->next_gen, num_pages);
+    		atomic_long_store(&meta->gen, eviction_meta->next_gen);
+			return CACHE_EXT_CONTINUE_ITER;
+		}
+		return CACHE_EXT_SKIP_NODE;
+	}
+
+	__u64 fkey;
+
 	struct candidate (*candidates)[MAX_CANDIDATES] = bpf_map_lookup_elem(&candidates_array, &cand_key);
 	if (!candidates) {
-		return CACHE_EXT_CONTINUE_ITER;
+		return CACHE_EXT_SKIP_NODE;
 	}
 
 	asm volatile(
@@ -1464,40 +1445,7 @@ static int mglru_ml_collect_fn(int idx, struct cache_ext_list_node *a)
 
 	*num_cand_ptr = num_cand + 1;
 
-	return CACHE_EXT_CONTINUE_ITER;
-}
-
-// Callback for bpf_for_each_map_elem to promote folios
-struct promote_ctx {
-	__u64 oldest_gen;
-	__u64 next_gen;
-	struct mglru_global_metadata *lrugen;
-};
-
-struct folio_shadow {} __attribute__((btf_type_tag("folio")));
-
-extern int bpf_cache_ext_list_move(__u64 list, struct folio_shadow *folio, bool move_head) __ksym;
-
-static __u64 promote_folio_callback(struct bpf_map *map, __u64 *key, struct promote_entry *entry, struct promote_ctx *ctx)
-{
-	if (!entry || !ctx || !ctx->lrugen) {
-		return 0;
-	}
-
-	struct folio_shadow *folio = (void *)entry->folio_addr;
-	struct folio_metadata *meta = bpf_map_lookup_elem(&folio_metadata_map, &entry->folio_addr);
-	if (!meta) {
-		return 0;
-	}
-
-	update_nr_pages_stat(ctx->lrugen, ctx->oldest_gen, -entry->pages);
-	update_nr_pages_stat(ctx->lrugen, ctx->next_gen, entry->pages);
-	atomic_long_store(&meta->gen, ctx->next_gen);
-
-	__u64 next_gen_list = mglru_lists[ctx->next_gen & (MAX_NR_GENS - 1)];
-	bpf_cache_ext_list_move(next_gen_list, folio, true);
-
-	return 0;
+	return CACHE_EXT_SKIP_NODE;
 }
 
 // Original MGLRU iteration function (kept for fallback)
@@ -1623,10 +1571,12 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 	__u64 oldest_gen_list = mglru_lists[oldest_gen_safe];
 
 	struct cache_ext_iterate_opts collect_opts = {
-		.continue_list = CACHE_EXT_ITERATE_SELF,
-		.continue_mode = CACHE_EXT_ITERATE_HEAD,
-		.evict_list = CACHE_EXT_ITERATE_SELF,
-		.evict_mode = CACHE_EXT_ITERATE_TAIL,
+		.continue_list = next_gen_list,
+		.continue_mode = CACHE_EXT_ITERATE_TAIL,
+		.evict_list = CACHE_EXT_ITERATE_SELF, // useless for us
+		.evict_mode = CACHE_EXT_ITERATE_TAIL, // useless for us
+		.skip_list = CACHE_EXT_ITERATE_SELF,
+		.skip_mode = CACHE_EXT_ITERATE_SKIP,
 	};
 
 	int ret = bpf_cache_ext_list_iterate_extended(
@@ -1710,16 +1660,6 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 	EVICT_LOOP_BODY(31);
 
     #undef EVICT_LOOP_BODY
-
-	// Phase 5: Promote protected/dirty folios to next_gen
-	// Use bpf_for_each_map_elem to iterate over should_promote_map
-	struct promote_ctx promote_ctx = {
-		.oldest_gen = oldest_gen,
-		.next_gen = next_gen,
-		.lrugen = lrugen,
-	};
-
-	bpf_for_each_map_elem(&should_promote_map, promote_folio_callback, &promote_ctx, 0);
 
 	s64 success_evicted = eviction_ctx->nr_folios_to_evict;
 	s64 failed_evicted = max(0, eviction_ctx->request_nr_folios_to_evict - eviction_ctx->nr_folios_to_evict);
