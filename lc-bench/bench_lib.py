@@ -80,7 +80,6 @@ class CacheExtPolicy:
         log.info("Starting policy thread: %s", cmd)
         self._policy_thread = subprocess.Popen(
             cmd,
-            start_new_session=True
         )
         sleep(10)
 
@@ -98,12 +97,8 @@ class CacheExtPolicy:
             raise Exception("Policy not started")
 
         if self._policy_thread.poll() is None:
-            cmd = [
-                "sudo",
-                "kill",
-                "-15",
-                f"-{self._policy_thread.pid}"
-            ]
+            self._policy_thread.terminate()
+            self._policy_thread.wait()
 
 
         out, err = self._policy_thread.communicate()
