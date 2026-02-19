@@ -37,11 +37,6 @@ ITERATIONS=1
 
 mkdir -p "$RESULTS_PATH"
 
-echo "Cleaning up BPF maps from previous runs..."
-if [ -f "$BASE_DIR/lc-eval/cleanup_bpf_maps.sh" ]; then
-	sudo "$BASE_DIR/lc-eval/cleanup_bpf_maps.sh" || true
-fi
-
 # Disable MGLRU
 if ! "$BASE_DIR/utils/disable-mglru.sh"; then
 	echo "Failed to disable MGLRU. Please check the script."
