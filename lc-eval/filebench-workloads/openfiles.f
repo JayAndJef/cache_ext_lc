@@ -28,7 +28,10 @@
 set $dir=/tmp
 set $nfiles=50000
 set $meandirwidth=100
-set $nthreads=16
+set $nthreads=1
+set $count=100000   # number of open/close iterations
+
+set mode quit alldone
 
 define fileset name=bigfileset,path=$dir,size=0,entries=$nfiles,dirwidth=$meandirwidth,prealloc
 
@@ -38,8 +41,10 @@ define process name=fileopen,instances=1
   {
     flowop openfile name=open1,filesetname=bigfileset,fd=1
     flowop closefile name=close1,fd=1
+    flowop finishoncount name=finish,value=$count
   }
 }
 
 echo  "Openfiles Version 1.0 personality successfully loaded"
+echo  "Modified for deterministic iteration-based execution (100k iterations)"
 run 60
