@@ -105,20 +105,8 @@ class CacheExtPolicy:
             # run script cleanup
             pass
 
-        out, err = self._policy_thread.communicate()
-
         with suppress(subprocess.CalledProcessError):
             run(["sudo", "rm", "/sys/fs/bpf/cache_ext/scan_pids"])
-
-        if out is not None:
-            log.info("Policy thread stdout: %s", out.decode("utf-8"))
-        else:
-            log.info("Policy thread stdout: (empty)")
-
-        if err is not None:
-            log.info("Policy thread stderr: %s", err.decode("utf-8"))
-        else:
-            log.info("Policy thread stderr: (empty)")
 
         self.has_started = False
         self._policy_thread = None
