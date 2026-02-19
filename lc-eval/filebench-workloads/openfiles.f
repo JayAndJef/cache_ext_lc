@@ -29,7 +29,7 @@ set $dir=/tmp
 set $nfiles=50000
 set $meandirwidth=100
 set $nthreads=1
-set $count=100000   # number of open/close iterations
+set $count=150000   # number of open/close iterations
 
 set mode quit alldone
 
