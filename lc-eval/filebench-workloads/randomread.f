@@ -29,7 +29,7 @@ set $iosize=8k
 set $nthreads=1
 set $workingset=0
 set $directio=0
-set $count=5000   # total reads to stop on
+set $count=10000   # total reads to stop on
 
 define file name=largefile1,path=$dir,size=$filesize,prealloc,reuse,paralloc
 
