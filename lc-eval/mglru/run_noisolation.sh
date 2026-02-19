@@ -39,8 +39,11 @@ if ! "$BASE_DIR/utils/disable-mglru.sh"; then
 	exit 1
 fi
 
+# Optional cgroup memory parameter (default: 1G)
+CGROUP_MEMORY="${2:-1G}"
+
 # Run mglru_lc with the workload
-echo "Running mglru_lc with workload: $WORKLOAD_FILE"
+echo "Running mglru_lc with workload: $WORKLOAD_FILE memory: $CGROUP_MEMORY"
 python3 "$BENCH_PATH/bench_mglru_lc.py" \
 	--cpu 4 \
 	--policy-loader "$POLICY_PATH/cache_ext_mglru_lc.out" \
@@ -48,6 +51,7 @@ python3 "$BENCH_PATH/bench_mglru_lc.py" \
 	--watch-dir "$WATCH_DIR" \
 	--filebench-workload "$WORKLOAD_FILE" \
 	--iterations "$ITERATIONS" \
+	--cgroup-memory "$CGROUP_MEMORY" \
 	--ext-only
 
 echo "MGLRU-LC trace collection completed."

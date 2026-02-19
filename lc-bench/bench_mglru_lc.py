@@ -44,10 +44,16 @@ class MGLRULCBenchmark(BenchmarkFramework):
             default=False,
             help="Run only the cache_ext policy. Useful for data collection. Will be overriden if --default-only is specified",
         )
+        parser.add_argument(
+            "--cgroup-memory",
+            type=str,
+            default="1G",
+            help="Memory limit for cgroup (e.g., 512M, 1G, 2G). Default: 1G",
+        )
 
     def generate_configs(self, configs: List[Dict]) -> List[Dict]:
         configs = add_config_option("passes", [10], configs)
-        configs = add_config_option("cgroup_size", [1 * GiB], configs)
+        configs = add_config_option("cgroup_size", [parse_memory_string(self.args.cgroup_memory)], configs)
         if self.args.default_only:
             configs = add_config_option(
                 "cgroup_name", [DEFAULT_BASELINE_CGROUP], configs

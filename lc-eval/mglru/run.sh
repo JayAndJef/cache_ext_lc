@@ -3,9 +3,10 @@
 set -eu -o pipefail
 
 # Check for workload file argument
-if [ "$#" -ne 1 ]; then
-	echo "Usage: $0 <workload_file>"
-	echo "Example: $0 /path/to/workload.f"
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+	echo "Usage: $0 <workload_file> [cgroup_memory]"
+	echo "Example: $0 /path/to/workload.f 1G"
+	echo "  cgroup_memory: Optional memory limit (e.g., 512M, 1G, 2G). Default: 1G"
 	exit 1
 fi
 
@@ -15,6 +16,9 @@ if [ ! -f "$WORKLOAD_FILE" ]; then
 	echo "Error: Workload file not found: $WORKLOAD_FILE"
 	exit 1
 fi
+
+# Optional cgroup memory parameter (default: 1G)
+CGROUP_MEMORY="${2:-1G}"
 
 if ! uname -r | grep -q "cache-ext"; then
 	echo "This script is intended to be run on a cache_ext kernel."
@@ -40,7 +44,7 @@ if ! "$BASE_DIR/utils/disable-mglru.sh"; then
 fi
 
 # Run mglru_lc with the workload
-echo "Running mglru_lc with workload: $WORKLOAD_FILE"
+echo "Running mglru_lc with workload: $WORKLOAD_FILE memory: $CGROUP_MEMORY"
 python3 "$BENCH_PATH/bench_mglru_lc.py" \
 	--cpu 4 \
 	--policy-loader "$POLICY_PATH/cache_ext_mglru_lc.out" \
@@ -48,6 +52,7 @@ python3 "$BENCH_PATH/bench_mglru_lc.py" \
 	--watch-dir "$WATCH_DIR" \
 	--filebench-workload "$WORKLOAD_FILE" \
 	--iterations "$ITERATIONS" \
+	--cgroup-memory "$CGROUP_MEMORY" \
 	--ext-only
 
 echo "MGLRU-LC trace collection completed."

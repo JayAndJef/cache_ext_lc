@@ -3,9 +3,10 @@
 set -eu -o pipefail
 
 # Check for workload  + model file argument
-if [ "$#" -ne 2 ]; then
-	echo "Usage: $0 <workload_file>"
-	echo "Example: $0 /path/to/workload.f"
+if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
+	echo "Usage: $0 <workload_file> <model_file> [cgroup_memory]"
+	echo "Example: $0 /path/to/workload.f /path/to/model.json 1G"
+	echo "  cgroup_memory: Optional memory limit (e.g., 512M, 1G, 2G). Default: 1G"
 	exit 1
 fi
 
@@ -21,6 +22,9 @@ if [ ! -f "$MODEL_FILE" ]; then
 	echo "Error: Model file not found: $MODEL_FILE"
 	exit 1
 fi
+
+# Optional cgroup memory parameter (default: 1G)
+CGROUP_MEMORY="${3:-1G}"
 
 if ! uname -r | grep -q "cache-ext"; then
 	echo "This script is intended to be run on a cache_ext kernel."
@@ -46,7 +50,7 @@ if ! "$BASE_DIR/utils/disable-mglru.sh"; then
 fi
 
 # Run mglru_lc with the workload
-echo "Running mglru_ml with workload: $WORKLOAD_FILE model: $MODEL_FILE"
+echo "Running mglru_ml with workload: $WORKLOAD_FILE model: $MODEL_FILE memory: $CGROUP_MEMORY"
 python3 "$BENCH_PATH/bench_mglru_ml.py" \
 	--cpu 4 \
 	--policy-loader "$POLICY_PATH/cache_ext_mglru_ml.out" \
@@ -55,6 +59,7 @@ python3 "$BENCH_PATH/bench_mglru_ml.py" \
 	--watch-dir "$WATCH_DIR" \
 	--filebench-workload "$WORKLOAD_FILE" \
 	--iterations "$ITERATIONS" \
+	--cgroup-memory "$CGROUP_MEMORY" \
 	--ext-only
 
 echo "MGLRU-LC trace collection completed."

@@ -15,10 +15,37 @@ from typing import Dict, List, Union
 from ruamel.yaml import YAML
 
 GiB = 2**30
+MiB = 2**20
 log = logging.getLogger(__name__)
 
 DEFAULT_CACHE_EXT_CGROUP = "cache_ext_test"
 DEFAULT_BASELINE_CGROUP = "baseline_test"
+
+
+def parse_memory_string(mem_str: str) -> int:
+    """Parse memory string like '512M', '1G', '2G' into bytes.
+
+    Args:
+        mem_str: Memory string (e.g., '512M', '1G', '2G')
+
+    Returns:
+        Memory size in bytes
+
+    Raises:
+        ValueError: If the format is invalid
+    """
+    mem_str = mem_str.strip().upper()
+
+    if mem_str.endswith('G'):
+        return int(mem_str[:-1]) * GiB
+    elif mem_str.endswith('M'):
+        return int(mem_str[:-1]) * MiB
+    elif mem_str.endswith('K'):
+        return int(mem_str[:-1]) * 1024
+    elif mem_str.isdigit():
+        return int(mem_str)
+    else:
+        raise ValueError(f"Invalid memory format: {mem_str}. Use format like '512M', '1G', '2G'")
 
 
 class CacheExtPolicy:
