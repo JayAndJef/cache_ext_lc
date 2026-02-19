@@ -70,4 +70,7 @@ ps aux | grep "sudo.*cache_ext.*\.out" | grep -v grep | awk '{print $2}' | while
 	echo "  Killing process $pid"
 	sudo kill -15 "$pid" 2>/dev/null || true
 done
+
+sudo rm /home/vagrant/cache_ext_lc/results/*.json
+
 echo "Cleanup complete."
