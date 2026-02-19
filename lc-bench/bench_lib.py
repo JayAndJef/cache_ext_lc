@@ -104,7 +104,6 @@ class CacheExtPolicy:
                 "-15",
                 f"-{self._policy_thread.pid}"
             ]
-            run(cmd)
 
 
         out, err = self._policy_thread.communicate()
