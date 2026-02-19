@@ -97,8 +97,9 @@ class CacheExtPolicy:
             raise Exception("Policy not started")
 
         if self._policy_thread.poll() is None:
-            cmd = ["sudo", "kill", "-15", str(self._policy_thread.pid)]
-            run(cmd)
+            self._policy_thread.terminate()
+            self._policy_thread.wait()
+
 
         out, err = self._policy_thread.communicate()
 
