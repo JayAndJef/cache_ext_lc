@@ -64,3 +64,10 @@ python3 "$BENCH_PATH/bench_mglru_ml.py" \
 
 echo "MGLRU-LC trace collection completed."
 echo "Results saved to $RESULTS_PATH/mglru_lc_results.json"
+
+echo "Cleaning up cache_ext processes..."
+ps aux | grep "sudo.*cache_ext.*\.out" | grep -v grep | awk '{print $2}' | while read pid; do
+	echo "  Killing process $pid"
+	sudo kill -15 "$pid" 2>/dev/null || true
+done
+echo "Cleanup complete."
