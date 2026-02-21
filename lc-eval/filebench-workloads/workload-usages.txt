@@ -1,3 +1,7 @@
-openfiles=159707136
-mongo=86245376
-randomread>1073627136 <- ran using 1GiB cgroup, definitly forces eviction
+m is mib
+g is gib
+
+openfiles=100m run, 110m peak
+mongo=80m run, 86m peak
+randomread=6g run, 6.2g peak
+createfiles=1.1g run, 1.16g peak

@@ -29,8 +29,9 @@ set $meandirwidth=100
 set $meanfilesize=16k
 set $iosize=1m
 set $nthreads=16
+set $count=150000   # number of create/write/close iterations
 
-set mode quit firstdone
+set mode quit alldone
 
 define fileset name=bigfileset,path=$dir,size=$meanfilesize,entries=$nfiles,dirwidth=$meandirwidth
 
@@ -41,8 +42,10 @@ define process name=filecreate,instances=1
     flowop createfile name=createfile1,filesetname=bigfileset,fd=1
     flowop writewholefile name=writefile1,fd=1,iosize=$iosize
     flowop closefile name=closefile1,fd=1
+    flowop finishoncount name=finish,value=$count
   }
 }
 
 echo  "Createfiles Version 3.0 personality successfully loaded"
+echo  "Modified for deterministic iteration-based execution (150k iterations)"
 run 60
