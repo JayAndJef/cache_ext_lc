@@ -30,6 +30,9 @@ set $filesize=cvar(type=cvar-gamma,parameters=mean:16384;gamma:1.5)
 set $nthreads=16
 set $iosize=1m
 set $meanappendsize=16k
+set $count=500000   # number of varmail operation iterations
+
+set mode quit alldone
 
 define fileset name=bigfileset,path=$dir,size=$filesize,entries=$nfiles,dirwidth=$meandirwidth,prealloc=80
 
@@ -50,9 +53,11 @@ define process name=filereader,instances=1
     flowop openfile name=openfile4,filesetname=bigfileset,fd=1
     flowop readwholefile name=readfile4,fd=1,iosize=$iosize
     flowop closefile name=closefile4,fd=1
+    flowop finishoncount name=finish,value=$count
   }
 }
 
 echo  "Varmail Version 3.0 personality successfully loaded"
+echo  "Modified for deterministic iteration-based execution (150k iterations)"
 
 run 60
