@@ -47,4 +47,4 @@ define process name=fileopen,instances=1
 
 echo  "Openfiles Version 1.0 personality successfully loaded"
 echo  "Modified for deterministic iteration-based execution (100k iterations)"
-run 60
+run 120
