@@ -30,7 +30,7 @@ set $filesize=cvar(type=cvar-gamma,parameters=mean:16384;gamma:1.5)
 set $nthreads=1
 set $iosize=1m
 set $meanappendsize=16k
-set $count=500000   # number of varmail operation iterations
+set $count=150000   # number of varmail operation iterations
 
 set mode quit alldone
 
@@ -58,6 +58,6 @@ define process name=filereader,instances=1
 }
 
 echo  "Varmail Version 3.0 personality successfully loaded"
-echo  "Modified for deterministic iteration-based execution (500k iterations)"
+echo  "Modified for deterministic iteration-based execution (150k iterations)"
 
 run 60
