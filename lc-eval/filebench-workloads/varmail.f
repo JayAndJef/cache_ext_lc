@@ -27,7 +27,7 @@ set $dir=/tmp
 set $nfiles=1000
 set $meandirwidth=1000000
 set $filesize=cvar(type=cvar-gamma,parameters=mean:16384;gamma:1.5)
-set $nthreads=16
+set $nthreads=1
 set $iosize=1m
 set $meanappendsize=16k
 set $count=500000   # number of varmail operation iterations
@@ -60,5 +60,4 @@ define process name=filereader,instances=1
 echo  "Varmail Version 3.0 personality successfully loaded"
 echo  "Modified for deterministic iteration-based execution (500k iterations)"
 
-createfiles
 run 60
