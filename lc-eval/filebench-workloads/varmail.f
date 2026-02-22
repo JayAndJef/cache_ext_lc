@@ -60,4 +60,5 @@ define process name=filereader,instances=1
 echo  "Varmail Version 3.0 personality successfully loaded"
 echo  "Modified for deterministic iteration-based execution (500k iterations)"
 
+createfiles
 run 60
