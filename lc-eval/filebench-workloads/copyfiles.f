@@ -29,8 +29,9 @@ set $meandirwidth=20
 set $meanfilesize=16k
 set $iosize=1m
 set $nthreads=1
+set $count=150000   # number of copy operation iterations
 
-set mode quit firstdone
+set mode quit alldone
 
 define fileset name=bigfileset,path=$dir,size=$meanfilesize,entries=$nfiles,dirwidth=$meandirwidth,prealloc=100,paralloc
 define fileset name=destfiles,path=$dir,size=$meanfilesize,entries=$nfiles,dirwidth=$meandirwidth
@@ -45,8 +46,10 @@ define process name=filereader,instances=1
     flowop writewholefile name=writefile2,fd=2,srcfd=1,iosize=$iosize
     flowop closefile name=closefile1,fd=1
     flowop closefile name=closefile2,fd=2
+    flowop finishoncount name=finish,value=$count
   }
 }
 
 echo  "Copyfiles Version 3.0 personality successfully loaded"
+echo  "Modified for deterministic iteration-based execution (150k iterations)"
 run 60
