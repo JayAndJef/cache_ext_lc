@@ -1510,6 +1510,7 @@ static int mglru_iter_fn(int idx, struct cache_ext_list_node *a)
 void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_ctx,
 		    struct mem_cgroup *memcg)
 {
+	u64 start_time = bpf_ktime_get_ns();
 	DEFINE_LRUGEN_void;
 
 	bpf_printk("num folios in eviction request: %d", eviction_ctx->request_nr_folios_to_evict);
@@ -1669,6 +1670,9 @@ void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_
 				eviction_ctx->nr_folios_to_evict,
 				eviction_ctx->request_nr_folios_to_evict);
 	}
+	u64 end_time = bpf_ktime_get_ns();
+	u64 elapsed_ns = end_time - start_time;
+	bpf_printk("cache_ext: ML eviction took %llu ns (%llu us)\n", elapsed_ns, elapsed_ns / 1000);
 }
 
 void BPF_STRUCT_OPS(mglru_folio_added, struct folio *folio)
