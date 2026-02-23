@@ -37,9 +37,6 @@ set $logfilesize=10m
 set $nfiles=10
 set $nlogfiles=1
 set $directio=0
-set $count=150000   # number of oltp operation iterations
-
-set mode quit alldone
 
 eventgen rate = $eventrate
 
@@ -81,11 +78,9 @@ define process name=shadow,instances=$nshadows
     flowop sempost name=shadow-post-lg,value=1,target=lg-block,blocking
     flowop sempost name=shadow-post-dbwr,value=1,target=dbwr-block,blocking
     flowop eventlimit name=random-rate
-    flowop finishoncount name=finish,value=$count
   }
 }
 
 echo "OLTP Version 3.0  personality successfully loaded"
-echo "Modified for deterministic iteration-based execution (150k iterations)"
 
-run 120
+run 60
