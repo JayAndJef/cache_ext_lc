@@ -689,6 +689,7 @@ struct file_state {
 	__u64 prev_access_time;
 	__u64 last_access_time;
 	__u32 hotness_ema;
+	__u32 last_offset; // for model eval
 };
 
 // Per-folio map: key is dev ino index for tracking across eviction
@@ -877,15 +878,18 @@ static inline void track_folio_access(struct folio *folio) {
 		}
 	}
 
-	u32 seq_distance = 0;
+	u32 seq_distance = 0xffffffffU;
+	u32 last_offset = 0xffffffffU;
 	if (file_state) {
 		u64 offset_diff = index > file_state->last_index ?
 			index - file_state->last_index :
 			file_state->last_index - index;
 		if (offset_diff > 0xffffffffU) {
 			seq_distance = 0xffffffffU;
+			last_offset = 0xffffffffU;
 		} else {
 			seq_distance = (u32)offset_diff;
+			last_offset = (u32)offset_diff;
 		}
 	}
 
@@ -954,6 +958,7 @@ static inline void track_folio_access(struct folio *folio) {
 
 	struct file_state new_file_state = {
 		.last_index = index,
+		.last_offset = last_offset,
 		.prev_access_time = file_state ? file_state->last_access_time : 0,
 		.last_access_time = timestamp,
 		.hotness_ema = inode_hotness_ema,
@@ -1022,6 +1027,7 @@ static inline void track_folio_insertion(struct folio *folio) {
 
 	struct file_state new_file_state = {
 		.last_index = index,
+		.last_offset = file_state ? file_state->last_offset : 0xffffffffU,
 		.prev_access_time = file_state ? file_state->last_access_time : 0,
 		.last_access_time = timestamp,
 		.hotness_ema = file_state ? file_state->hotness_ema : 0,
@@ -1170,9 +1176,7 @@ static inline s64 compute_ml_score(struct folio *folio) {
 	raw_features[FQ] = page_state->frequency;
 
 	// SD: seq_distance
-	u64 offset_diff = index > file_state->last_index ?
-		index - file_state->last_index : file_state->last_index - index;
-	raw_features[SD] = (offset_diff > 0xffffffffU) ? 0xffffffffU : (u32)offset_diff;
+	raw_features[SD] = file_state->last_offset;
 
 	// PD2: page_time_delta2
 	raw_features[PD2] = (page_state->prev_access_time && timestamp >= page_state->prev_access_time) ?
