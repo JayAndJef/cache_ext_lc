@@ -1177,6 +1177,8 @@ static inline s64 compute_ml_score(struct folio *folio) {
 		return S64_MAX;
 	}
 
+	bpf_printk("last folio access: %d, last inode access: %d", page_state->last_access_time, file_state->last_access_time);
+
 	// Extract raw features (matching pairwise_ranker.py order: pd, sz, fq, sd, p2, id, i2, ie)
 	u64 raw_features[NUM_MODEL_FEATURES];
 
@@ -1459,67 +1461,6 @@ static int mglru_ml_collect_fn(int idx, struct cache_ext_list_node *a)
 	*num_cand_ptr = num_cand + 1;
 
 	return CACHE_EXT_SKIP_NODE;
-}
-
-// Original MGLRU iteration function (kept for fallback)
-static int mglru_iter_fn(int idx, struct cache_ext_list_node *a)
-{
-	struct mglru_global_metadata *lrugen;
-	int key__ = 0;
-	lrugen = bpf_map_lookup_elem(&mglru_global_metadata_map, &key__);
-	if (!lrugen) {
-		bpf_printk(
-			"cache_ext: Failed to lookup lrugen metadata\n");
-		return CACHE_EXT_EVICT_NODE;
-	}
-
-	struct eviction_metadata *eviction_meta = get_eviction_metadata();
-	if (!eviction_meta) {
-		bpf_printk("cache_ext: iter_fn: Failed to get eviction metadata\n");
-		return CACHE_EXT_EVICT_NODE;
-	}
-	eviction_meta->iter_reached = idx;
-
-	// Get folio metadata
-	__u64 key = (__u64)a->folio;
-	struct folio_metadata *meta =
-		bpf_map_lookup_elem(&folio_metadata_map, &key);
-	if (!meta) {
-		bpf_printk("cache_ext: iter_fn: Failed to get metadata\n");
-		// TODO: Maybe we should evict it instead?
-		return CACHE_EXT_EVICT_NODE;
-	}
-
-	int tier_threshold = eviction_meta->tier_threshold;
-	if (tier_threshold > MAX_NR_TIERS || tier_threshold < 0) {
-		bpf_printk("cache_ext: Invalid tier threshold %d\n", tier_threshold);
-	}
-	// int tier_threshold = 2;
-	int tier = lru_tier_from_refs(atomic_long_read(&meta->accesses));
-
-	/* protected */
-	if (tier > tier_threshold) {
-		update_protected_stat(lrugen, tier, folio_nr_pages(a->folio));
-		// promote to next gen
-		// TODO: Update nr_pages stats
-		int num_pages = folio_nr_pages(a->folio);
-		update_nr_pages_stat(lrugen, eviction_meta->curr_gen, -num_pages);
-		update_nr_pages_stat(lrugen, eviction_meta->next_gen, num_pages);
-		atomic_long_store(&meta->gen, eviction_meta->next_gen);
-		return CACHE_EXT_CONTINUE_ITER;
-	}
-
-	/* waiting for writeback */
-	if (folio_test_locked(a->folio) || folio_test_writeback(a->folio) ||
-	    folio_test_dirty(a->folio)) {
-		// promote to next gen
-		int num_pages = folio_nr_pages(a->folio);
-		update_nr_pages_stat(lrugen, eviction_meta->curr_gen, -num_pages);
-		update_nr_pages_stat(lrugen, eviction_meta->next_gen, num_pages);
-		atomic_long_store(&meta->gen, eviction_meta->next_gen);
-		return CACHE_EXT_CONTINUE_ITER;
-	}
-	return CACHE_EXT_EVICT_NODE;
 }
 
 void BPF_STRUCT_OPS(mglru_evict_folios, struct cache_ext_eviction_ctx *eviction_ctx,
