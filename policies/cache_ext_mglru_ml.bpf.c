@@ -963,7 +963,10 @@ static inline void track_folio_access(struct folio *folio) {
 	new_page_state.last_access_delta = page_state ? page_time_delta : UNKNOWN_DELTA_NS;
 	new_page_state.frequency = frequency;
 
-	bpf_map_update_elem(&per_folio_map, &folio_key, &new_page_state, BPF_ANY);
+	int ret = bpf_map_update_elem(&per_folio_map, &folio_key, &new_page_state, BPF_ANY);
+	if (ret < 0) {
+		bpf_printk("per_folio_map write failed: %d", ret);
+	}
 
 	struct file_state new_file_state = {
 		.last_index = index,
@@ -974,7 +977,10 @@ static inline void track_folio_access(struct folio *folio) {
 		.prev_access_delta = file_state ? file_state->last_access_delta : UNKNOWN_DELTA_NS,
 		.hotness_ema = inode_hotness_ema,
 	};
-	bpf_map_update_elem(&per_file_map, &fkey, &new_file_state, BPF_ANY);
+	ret = bpf_map_update_elem(&per_file_map, &fkey, &new_file_state, BPF_ANY);
+	if (ret < 0) {
+		bpf_printk("per_file_map write failed: %d", ret);
+	}
 
 	struct cache_access_fields fields = {
 		.timestamp = timestamp,
@@ -1038,7 +1044,10 @@ static inline void track_folio_insertion(struct folio *folio) {
 	new_page_state.last_access_time = timestamp;
 	new_page_state.last_file_offset = index;
 
-	bpf_map_update_elem(&per_folio_map, &folio_key, &new_page_state, BPF_ANY);
+	int ret = bpf_map_update_elem(&per_folio_map, &folio_key, &new_page_state, BPF_ANY);
+	if (ret < 0) {
+		bpf_printk("per_folio_map write failed: %d", ret);
+	}
 
 	struct file_state new_file_state = {
 		.last_index = index,
@@ -1049,7 +1058,10 @@ static inline void track_folio_insertion(struct folio *folio) {
 		.prev_access_delta = file_state ? file_state->prev_access_delta : UNKNOWN_DELTA_NS,
 		.hotness_ema = file_state ? file_state->hotness_ema : 0,
 	};
-	bpf_map_update_elem(&per_file_map, &fkey, &new_file_state, BPF_ANY);
+	ret = bpf_map_update_elem(&per_file_map, &fkey, &new_file_state, BPF_ANY);
+	if (ret < 0) {
+		bpf_printk("per_file_map write failed: %d", ret);
+	}
 
 	struct cache_insertion_event event = {
 		.timestamp = timestamp,
@@ -1173,8 +1185,12 @@ static inline s64 compute_ml_score(struct folio *folio) {
 	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
 	struct file_state *file_state = bpf_map_lookup_elem(&per_file_map, &fkey);
 
-	if (!page_state || !file_state) {
-    	bpf_printk("failed to lookup page or file state");
+	if (!page_state) {
+    	bpf_printk("failed to lookup page state");
+    	return S64_MAX;
+	}
+	if (!file_state) {
+    	bpf_printk("failed to lookup file state");
     	return S64_MAX;
 	}
 
