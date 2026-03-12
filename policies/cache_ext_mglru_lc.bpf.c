@@ -684,7 +684,7 @@ struct file_key {
 };
 
 struct file_state {
-	__u64 last_offset;
+	__u64 last_index;
 	__u64 prev_access_time;
 	__u64 last_access_time;
 	__u32 hotness_ema;
@@ -878,9 +878,9 @@ static inline void track_folio_access(struct folio *folio) {
 
 	u32 seq_distance = 0;
 	if (file_state) {
-		u64 offset_diff = index > file_state->last_offset ?
-			index - file_state->last_offset :
-			file_state->last_offset - index;
+		u64 offset_diff = index > file_state->last_index ?
+			index - file_state->last_index :
+			file_state->last_index - index;
 		if (offset_diff > 0xffffffffU) {
 			seq_distance = 0xffffffffU;
 		} else {
@@ -952,7 +952,7 @@ static inline void track_folio_access(struct folio *folio) {
 	bpf_map_update_elem(&per_folio_map, &folio_key, &new_page_state, BPF_ANY);
 
 	struct file_state new_file_state = {
-		.last_offset = index,
+		.last_index = index,
 		.prev_access_time = file_state ? file_state->last_access_time : 0,
 		.last_access_time = timestamp,
 		.hotness_ema = inode_hotness_ema,
@@ -1020,7 +1020,7 @@ static inline void track_folio_insertion(struct folio *folio) {
 	bpf_map_update_elem(&per_folio_map, &folio_key, &new_page_state, BPF_ANY);
 
 	struct file_state new_file_state = {
-		.last_offset = index,
+		.last_index = index,
 		.prev_access_time = file_state ? file_state->last_access_time : 0,
 		.last_access_time = timestamp,
 		.hotness_ema = file_state ? file_state->hotness_ema : 0,
