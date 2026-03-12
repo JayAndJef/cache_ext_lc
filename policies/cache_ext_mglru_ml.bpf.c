@@ -834,20 +834,20 @@ static inline void track_folio_access(struct folio *folio) {
    	u64 index = folio->index;
     u64 timestamp = bpf_ktime_get_ns();
 
-	struct tracer_page_key folio_key = {
-        .dev = s_dev,
-        .ino = i_ino,
-        .offset = index
-    };
+	struct tracer_page_key folio_key;
+	__builtin_memset(&folio_key, 0, sizeof(folio_key));
+	folio_key.dev = s_dev;
+	folio_key.ino = i_ino;
+	folio_key.offset = index;
 
 	if (s_dev == 0 || i_ino == 0) {
 		return;
 	}
 
-	struct file_key fkey = {
-		.dev = s_dev,
-		.ino = i_ino,
-	};
+	struct file_key fkey;
+	__builtin_memset(&fkey, 0, sizeof(fkey));
+	fkey.dev = s_dev;
+	fkey.ino = i_ino;
 
 	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
 	struct file_state *file_state = bpf_map_lookup_elem(&per_file_map, &fkey);
@@ -1007,20 +1007,20 @@ static inline void track_folio_insertion(struct folio *folio) {
 	u64 index = folio->index;
     u64 timestamp = bpf_ktime_get_ns();
 
-    struct tracer_page_key folio_key = {
-        .dev = s_dev,
-        .ino = i_ino,
-        .offset = index
-    };
+	struct tracer_page_key folio_key;
+	__builtin_memset(&folio_key, 0, sizeof(folio_key));
+	folio_key.dev = s_dev;
+	folio_key.ino = i_ino;
+	folio_key.offset = index;
 
 	if (s_dev == 0 || i_ino == 0) {
 		return;
 	}
 
-	struct file_key fkey = {
-		.dev = s_dev,
-		.ino = i_ino,
-	};
+	struct file_key fkey;
+	__builtin_memset(&fkey, 0, sizeof(fkey));
+	fkey.dev = s_dev;
+	fkey.ino = i_ino;
 
 	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
 	struct file_state *file_state = bpf_map_lookup_elem(&per_file_map, &fkey);
@@ -1171,22 +1171,24 @@ static inline s64 compute_ml_score(struct folio *folio) {
 		return S64_MAX;
 	}
 
-	struct tracer_page_key folio_key = {
-		.dev = s_dev,
-		.ino = i_ino,
-		.offset = index
-	};
+	struct tracer_page_key folio_key;
+	__builtin_memset(&folio_key, 0, sizeof(folio_key));
+	folio_key.dev = s_dev;
+	folio_key.ino = i_ino;
+	folio_key.offset = index;
 
-	struct file_key fkey = {
-		.dev = s_dev,
-		.ino = i_ino,
-	};
+	struct file_key fkey;
+	__builtin_memset(&fkey, 0, sizeof(fkey));
+	fkey.dev = s_dev;
+	fkey.ino = i_ino;
+
+	bpf_printk("compute_ml_score: looking up dev=%u ino=%llu offset=%llu", s_dev, i_ino, index);
 
 	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
 	struct file_state *file_state = bpf_map_lookup_elem(&per_file_map, &fkey);
 
 	if (!page_state) {
-    	bpf_printk("failed to lookup page state");
+    	bpf_printk("failed to lookup page state for dev=%u ino=%llu offset=%llu", s_dev, i_ino, index);
     	return S64_MAX;
 	}
 	if (!file_state) {
