@@ -10,6 +10,8 @@ char _license[] SEC("license") = "GPL";
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 #define INT64_MAX (9223372036854775807LL)
+#define UNKNOWN_DELTA_NS 0xffffffffffffffffULL
+#define UNKNOWN_OFFSET_DELTA 0xffffffffU
 
 // #define DEBUG
 #ifdef DEBUG
@@ -676,6 +678,8 @@ struct tracer_page_state {
 	__u64 last_access_time;
 	__u64 last_file_offset;
 	__u64 file_size;
+	__u64 last_access_delta;
+	__u64 prev_access_delta;
 	__u32 frequency;
 };
 
@@ -688,6 +692,8 @@ struct file_state {
 	__u64 last_index;
 	__u64 prev_access_time;
 	__u64 last_access_time;
+	__u64 last_access_delta;
+	__u64 prev_access_delta;
 	__u32 hotness_ema;
 	__u32 last_offset; // for model eval
 };
@@ -846,47 +852,47 @@ static inline void track_folio_access(struct folio *folio) {
 	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
 	struct file_state *file_state = bpf_map_lookup_elem(&per_file_map, &fkey);
 
-	u64 page_time_delta = 0xffffffffffffffffULL;
-	u64 page_time_delta2 = 0xffffffffffffffffULL;
+	u64 page_time_delta = UNKNOWN_DELTA_NS;
+	u64 page_time_delta2 = UNKNOWN_DELTA_NS;
 	bool has_page_delta = false;
 	bool has_page_delta2 = false;
 	if (page_state) {
 		if (timestamp >= page_state->last_access_time) {
 			page_time_delta = timestamp - page_state->last_access_time;
-			has_page_delta = true;
 		}
 		if (page_state->prev_access_time &&
 		    timestamp >= page_state->prev_access_time) {
 			page_time_delta2 = timestamp - page_state->prev_access_time;
-			has_page_delta2 = true;
 		}
+		has_page_delta = page_state->last_access_delta != UNKNOWN_DELTA_NS;
+		has_page_delta2 = page_state->prev_access_delta != UNKNOWN_DELTA_NS;
 	}
 
-	u64 inode_time_delta = 0xffffffffffffffffULL;
-	u64 inode_time_delta2 = 0xffffffffffffffffULL;
+	u64 inode_time_delta = UNKNOWN_DELTA_NS;
+	u64 inode_time_delta2 = UNKNOWN_DELTA_NS;
 	bool has_inode_delta = false;
 	bool has_inode_delta2 = false;
 	if (file_state) {
 		if (timestamp >= file_state->last_access_time) {
 			inode_time_delta = timestamp - file_state->last_access_time;
-			has_inode_delta = true;
 		}
 		if (file_state->prev_access_time &&
 		    timestamp >= file_state->prev_access_time) {
 			inode_time_delta2 = timestamp - file_state->prev_access_time;
-			has_inode_delta2 = true;
 		}
+		has_inode_delta = file_state->last_access_delta != UNKNOWN_DELTA_NS;
+		has_inode_delta2 = file_state->prev_access_delta != UNKNOWN_DELTA_NS;
 	}
 
-	u32 seq_distance = 0xffffffffU;
-	u32 last_offset = 0xffffffffU;
+	u32 seq_distance = UNKNOWN_OFFSET_DELTA;
+	u32 last_offset = UNKNOWN_OFFSET_DELTA;
 	if (file_state) {
 		u64 offset_diff = index > file_state->last_index ?
 			index - file_state->last_index :
 			file_state->last_index - index;
-		if (offset_diff > 0xffffffffU) {
-			seq_distance = 0xffffffffU;
-			last_offset = 0xffffffffU;
+		if (offset_diff > UNKNOWN_OFFSET_DELTA) {
+			seq_distance = UNKNOWN_OFFSET_DELTA;
+			last_offset = UNKNOWN_OFFSET_DELTA;
 		} else {
 			seq_distance = (u32)offset_diff;
 			last_offset = (u32)offset_diff;
@@ -945,13 +951,16 @@ static inline void track_folio_access(struct folio *folio) {
 	if (page_state) {
 		new_page_state.first_access_time = page_state->first_access_time;
 		new_page_state.prev_access_time = page_state->last_access_time;
+		new_page_state.prev_access_delta = page_state->last_access_delta;
 	} else {
 		new_page_state.first_access_time = timestamp;
 		new_page_state.prev_access_time = 0;
+		new_page_state.prev_access_delta = UNKNOWN_DELTA_NS;
 	}
 	new_page_state.last_access_time = timestamp;
 	new_page_state.last_file_offset = index;
 	new_page_state.file_size = file_size;
+	new_page_state.last_access_delta = page_state ? page_time_delta : UNKNOWN_DELTA_NS;
 	new_page_state.frequency = frequency;
 
 	bpf_map_update_elem(&per_folio_map, &folio_key, &new_page_state, BPF_ANY);
@@ -961,6 +970,8 @@ static inline void track_folio_access(struct folio *folio) {
 		.last_offset = last_offset,
 		.prev_access_time = file_state ? file_state->last_access_time : 0,
 		.last_access_time = timestamp,
+		.last_access_delta = file_state ? inode_time_delta : UNKNOWN_DELTA_NS,
+		.prev_access_delta = file_state ? file_state->last_access_delta : UNKNOWN_DELTA_NS,
 		.hotness_ema = inode_hotness_ema,
 	};
 	bpf_map_update_elem(&per_file_map, &fkey, &new_file_state, BPF_ANY);
@@ -1014,11 +1025,15 @@ static inline void track_folio_insertion(struct folio *folio) {
 		new_page_state.prev_access_time = page_state->last_access_time;
 		new_page_state.frequency = page_state->frequency;
 		new_page_state.file_size = page_state->file_size;
+		new_page_state.last_access_delta = page_state->last_access_delta;
+		new_page_state.prev_access_delta = page_state->prev_access_delta;
 	} else {
 		new_page_state.first_access_time = timestamp;
 		new_page_state.prev_access_time = 0;
 		new_page_state.frequency = 0;
 		new_page_state.file_size = 0;
+		new_page_state.last_access_delta = UNKNOWN_DELTA_NS;
+		new_page_state.prev_access_delta = UNKNOWN_DELTA_NS;
 	}
 	new_page_state.last_access_time = timestamp;
 	new_page_state.last_file_offset = index;
@@ -1027,9 +1042,11 @@ static inline void track_folio_insertion(struct folio *folio) {
 
 	struct file_state new_file_state = {
 		.last_index = index,
-		.last_offset = file_state ? file_state->last_offset : 0xffffffffU,
+		.last_offset = file_state ? file_state->last_offset : UNKNOWN_OFFSET_DELTA,
 		.prev_access_time = file_state ? file_state->last_access_time : 0,
 		.last_access_time = timestamp,
+		.last_access_delta = file_state ? file_state->last_access_delta : UNKNOWN_DELTA_NS,
+		.prev_access_delta = file_state ? file_state->prev_access_delta : UNKNOWN_DELTA_NS,
 		.hotness_ema = file_state ? file_state->hotness_ema : 0,
 	};
 	bpf_map_update_elem(&per_file_map, &fkey, &new_file_state, BPF_ANY);
@@ -1160,14 +1177,11 @@ static inline s64 compute_ml_score(struct folio *folio) {
 		return S64_MAX;
 	}
 
-	u64 timestamp = bpf_ktime_get_ns();
-
 	// Extract raw features (matching pairwise_ranker.py order: pd, sz, fq, sd, p2, id, i2, ie)
 	u64 raw_features[NUM_MODEL_FEATURES];
 
-	// PD: page_time_delta
-	raw_features[PD] = (timestamp >= page_state->last_access_time) ?
-		(timestamp - page_state->last_access_time) : 0xffffffffffffffffULL;
+	// PD: stored page_time_delta
+	raw_features[PD] = page_state->last_access_delta;
 
 	// SZ: file_size
 	raw_features[SZ] = page_state->file_size;
@@ -1178,17 +1192,14 @@ static inline s64 compute_ml_score(struct folio *folio) {
 	// SD: seq_distance
 	raw_features[SD] = file_state->last_offset;
 
-	// PD2: page_time_delta2
-	raw_features[PD2] = (page_state->prev_access_time && timestamp >= page_state->prev_access_time) ?
-		(timestamp - page_state->prev_access_time) : 0xffffffffffffffffULL;
+	// PD2: stored page_time_delta2
+	raw_features[PD2] = page_state->prev_access_delta;
 
-	// ID: inode_time_delta
-	raw_features[ID] = (timestamp >= file_state->last_access_time) ?
-		(timestamp - file_state->last_access_time) : 0xffffffffffffffffULL;
+	// ID: stored inode_time_delta
+	raw_features[ID] = file_state->last_access_delta;
 
-	// ID2: inode_time_delta2
-	raw_features[ID2] = (file_state->prev_access_time && timestamp >= file_state->prev_access_time) ?
-		(timestamp - file_state->prev_access_time) : 0xffffffffffffffffULL;
+	// ID2: stored inode_time_delta2
+	raw_features[ID2] = file_state->prev_access_delta;
 
 	// IE: inode_hotness_ema
 	raw_features[IE] = file_state->hotness_ema;
