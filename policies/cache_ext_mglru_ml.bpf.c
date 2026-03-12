@@ -1155,7 +1155,7 @@ static inline s64 compute_ml_score(struct folio *folio) {
 	u64 index = folio->index;
 
 	if (s_dev == 0 || i_ino == 0) {
-		// Cannot extract features, return worst score
+		bpf_printk("failed to extract features");
 		return S64_MAX;
 	}
 
@@ -1174,7 +1174,8 @@ static inline s64 compute_ml_score(struct folio *folio) {
 	struct file_state *file_state = bpf_map_lookup_elem(&per_file_map, &fkey);
 
 	if (!page_state || !file_state) {
-		return S64_MAX;
+    	bpf_printk("failed to lookup page or file state");
+    	return S64_MAX;
 	}
 
 	bpf_printk("last folio access: %llu, last inode access: %llu", (unsigned long long)page_state->last_access_time, (unsigned long long)file_state->last_access_time);
