@@ -1182,21 +1182,17 @@ static inline s64 compute_ml_score(struct folio *folio) {
 	fkey.dev = s_dev;
 	fkey.ino = i_ino;
 
-	bpf_printk("compute_ml_score: looking up dev=%u ino=%llu offset=%llu", s_dev, i_ino, index);
-
 	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
 	struct file_state *file_state = bpf_map_lookup_elem(&per_file_map, &fkey);
 
 	if (!page_state) {
-    	bpf_printk("failed to lookup page state for dev=%u ino=%llu offset=%llu", s_dev, i_ino, index);
+    	bpf_printk("failed to lookup page state");
     	return S64_MAX;
 	}
 	if (!file_state) {
     	bpf_printk("failed to lookup file state");
     	return S64_MAX;
 	}
-
-	bpf_printk("last folio access: %llu, last inode access: %llu", (unsigned long long)page_state->last_access_time, (unsigned long long)file_state->last_access_time);
 
 	// Extract raw features (matching pairwise_ranker.py order: pd, sz, fq, sd, p2, id, i2, ie)
 	u64 raw_features[NUM_MODEL_FEATURES];
