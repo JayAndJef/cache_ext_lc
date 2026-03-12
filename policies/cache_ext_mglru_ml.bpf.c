@@ -1177,7 +1177,7 @@ static inline s64 compute_ml_score(struct folio *folio) {
 		return S64_MAX;
 	}
 
-	bpf_printk("last folio access: %d, last inode access: %d", page_state->last_access_time, file_state->last_access_time);
+	bpf_printk("last folio access: %llu, last inode access: %llu", (unsigned long long)page_state->last_access_time, (unsigned long long)file_state->last_access_time);
 
 	// Extract raw features (matching pairwise_ranker.py order: pd, sz, fq, sd, p2, id, i2, ie)
 	u64 raw_features[NUM_MODEL_FEATURES];
