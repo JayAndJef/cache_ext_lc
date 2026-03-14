@@ -1194,9 +1194,6 @@ static inline s64 compute_ml_score(struct folio *folio) {
     	return S64_MAX;
 	}
 
-	bpf_printk("page access time at %llu", page_state->last_access_time);
-	bpf_printk("file access time at %llu", file_state->last_access_time);
-
 	// Extract raw features (matching pairwise_ranker.py order: pd, sz, fq, sd, p2, id, i2, ie)
 	u64 raw_features[NUM_MODEL_FEATURES];
 
