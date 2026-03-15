@@ -181,6 +181,7 @@ int main(int argc, char **argv)
 	int ret = 1;
 	struct cache_ext_mglru_lc_bpf *skel = NULL;
 	struct bpf_link *link = NULL;
+	int cgroup_fd = -1;
 	struct cmdline_args args = { 0 };
 	struct argp argp = { options, parse_opt, NULL, NULL };
 
@@ -192,6 +193,25 @@ int main(int argc, char **argv)
 	if (!args.watch_dir || !args.cgroup_path) {
 		fprintf(stderr, "Error: --watch_dir and --cgroup_path are required\n");
 		fprintf(stderr, "%s", USAGE);
+		return 1;
+	}
+
+	// Check if watch_dir exists
+	if (access(args.watch_dir, F_OK) == -1) {
+		fprintf(stderr, "Directory does not exist: %s\n", args.watch_dir);
+		return 1;
+	}
+
+	// Get full path for watch directory
+	char watch_dir_full_path[PATH_MAX];
+	if (!realpath(args.watch_dir, watch_dir_full_path)) {
+		perror("realpath");
+		return 1;
+	}
+
+	// Check path length (BPF limitation)
+	if (strlen(watch_dir_full_path) > 128) {
+		fprintf(stderr, "watch_dir path too long (max 128 chars)\n");
 		return 1;
 	}
 
@@ -218,19 +238,19 @@ int main(int argc, char **argv)
 
 	access_log_fd = open(access_log_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (access_log_fd < 0) {
-		fprintf(stderr, "Failed to open access log file: %s\n", strerror(errno));
+		perror("Failed to open access log file");
 		goto cleanup;
 	}
 
 	insertion_log_fd = open(insertion_log_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (insertion_log_fd < 0) {
-		fprintf(stderr, "Failed to open insertion log file: %s\n", strerror(errno));
+		perror("Failed to open insertion log file");
 		goto cleanup;
 	}
 
 	eviction_log_fd = open(eviction_log_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (eviction_log_fd < 0) {
-		fprintf(stderr, "Failed to open eviction log file: %s\n", strerror(errno));
+		perror("Failed to open eviction log file");
 		goto cleanup;
 	}
 
@@ -239,17 +259,17 @@ int main(int argc, char **argv)
 	printf("  Insertion: %s\n", insertion_log_path);
 	printf("  Eviction:  %s\n", eviction_log_path);
 
-	// Load and verify BPF application
-	skel = cache_ext_mglru_lc_bpf__open();
-	if (!skel) {
-		fprintf(stderr, "Failed to open BPF skeleton\n");
+	// Open cgroup directory early
+	cgroup_fd = open(args.cgroup_path, O_RDONLY);
+	if (cgroup_fd < 0) {
+		perror("Failed to open cgroup path");
 		goto cleanup;
 	}
 
-	// Get full path for watch directory
-	char watch_dir_full_path[PATH_MAX];
-	if (!realpath(args.watch_dir, watch_dir_full_path)) {
-		fprintf(stderr, "Failed to resolve watch_dir path: %s\n", strerror(errno));
+	// Load and verify BPF application
+	skel = cache_ext_mglru_lc_bpf__open();
+	if (skel == NULL) {
+		perror("Failed to open BPF skeleton");
 		goto cleanup;
 	}
 
@@ -259,38 +279,36 @@ int main(int argc, char **argv)
 
 	printf("Watching directory: %s\n", watch_dir_full_path);
 
-	// Initialize directory watcher (populate inode watchlist)
-	if (initialize_watch_dir_map(args.watch_dir,
-	                 bpf_map__fd(skel->maps.inode_watchlist), true) != 0) {
-		fprintf(stderr, "Failed to initialize directory watcher\n");
-		goto cleanup;
-	}
-
 	// Load BPF program
 	ret = cache_ext_mglru_lc_bpf__load(skel);
 	if (ret) {
-		fprintf(stderr, "Failed to load BPF skeleton: %d\n", ret);
+		perror("Failed to load BPF skeleton");
 		goto cleanup;
 	}
 
-	// Get cgroup file descriptor
-	int cgroup_fd = open(args.cgroup_path, O_RDONLY);
-	if (cgroup_fd < 0) {
-		fprintf(stderr, "Failed to open cgroup %s: %s\n",
-			args.cgroup_path, strerror(errno));
+	// Initialize directory watcher (populate inode watchlist) - AFTER load
+	if (initialize_watch_dir_map(args.watch_dir,
+	                 bpf_map__fd(skel->maps.inode_watchlist), true) != 0) {
+		perror("Failed to initialize directory watcher");
 		goto cleanup;
 	}
 
 	// Attach struct_ops
 	link = bpf_map__attach_cache_ext_ops(skel->maps.mglru_lc_ops, cgroup_fd);
 	if (!link) {
-		fprintf(stderr, "Failed to attach cache_ext_ops\n");
-		close(cgroup_fd);
+		perror("Failed to attach cache_ext_ops");
 		goto cleanup;
 	}
-	close(cgroup_fd);
 
 	printf("Successfully attached cache_ext_ops to %s\n", args.cgroup_path);
+
+	// Attach probes (including vfs_open fexit for directory watcher)
+	ret = cache_ext_mglru_lc_bpf__attach(skel);
+	if (ret) {
+		perror("Failed to attach BPF probes");
+		goto cleanup;
+	}
+	printf("Successfully attached BPF probes\n");
 
 	// Set up ring buffers
 	rb_access = ring_buffer__new(bpf_map__fd(skel->maps.rb_access),
@@ -342,10 +360,9 @@ int main(int argc, char **argv)
 
 cleanup:
 	cleanup_logs();
-	if (link)
-		bpf_link__destroy(link);
-	if (skel)
-		cache_ext_mglru_lc_bpf__destroy(skel);
+	close(cgroup_fd);
+	bpf_link__destroy(link);
+	cache_ext_mglru_lc_bpf__destroy(skel);
 
 	printf("\nFinal statistics:\n");
 	printf("  Access events:    %lu\n", access_count);
