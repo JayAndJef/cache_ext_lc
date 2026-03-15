@@ -102,6 +102,21 @@ class CacheInsertionEvent:
         }
 
 
+class CacheEvictionEvent:
+    FORMAT = '<Q'
+    SIZE = struct.calcsize(FORMAT)
+
+    def __init__(self, data):
+        unpacked = struct.unpack(self.FORMAT, data)
+        self.timestamp = unpacked[0]
+
+    def to_csv_row(self):
+        """Return data as a dictionary for CSV output."""
+        return {
+            'ts': self.timestamp
+        }
+
+
 def read_access_log(filepath, limit=None):
     """Read and parse cache access log file and output as CSV."""
     count = 0
@@ -156,10 +171,37 @@ def read_insertion_log(filepath, limit=None):
     return count
 
 
+def read_eviction_log(filepath, limit=None):
+    """Read and parse cache eviction log file and output as CSV."""
+    count = 0
+    fieldnames = ['ts']
+    writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)
+    writer.writeheader()
+
+    with open(filepath, 'rb') as f:
+        while True:
+            data = f.read(CacheEvictionEvent.SIZE)
+            if not data:
+                break
+            if len(data) < CacheEvictionEvent.SIZE:
+                print(f"Warning: Incomplete record at end of file ({len(data)} bytes)",
+                      file=sys.stderr)
+                break
+
+            event = CacheEvictionEvent(data)
+            writer.writerow(event.to_csv_row())
+            count += 1
+
+            if limit and count >= limit:
+                break
+
+    return count
+
+
 def main():
     parser = argparse.ArgumentParser(description='Read binary cache trace logs and output CSV')
     parser.add_argument('logfile', help='Path to binary log file')
-    parser.add_argument('--type', choices=['access', 'insertion'],
+    parser.add_argument('--type', choices=['access', 'insertion', 'eviction'],
                         help='Type of log file (auto-detected from filename if not specified)')
     parser.add_argument('--limit', type=int, help='Maximum number of records to read')
     parser.add_argument('--stats-only', action='store_true',
@@ -174,6 +216,8 @@ def main():
             log_type = 'access'
         elif 'insertion' in Path(args.logfile).name:
             log_type = 'insertion'
+        elif 'eviction' in Path(args.logfile).name:
+            log_type = 'eviction'
         else:
             print("Error: Cannot auto-detect log type. Please specify --type",
                   file=sys.stderr)
@@ -186,14 +230,18 @@ def main():
         file_size = os.path.getsize(args.logfile)
         if log_type == 'access':
             count = file_size // CacheAccessEvent.SIZE
-        else:
+        elif log_type == 'insertion':
             count = file_size // CacheInsertionEvent.SIZE
+        else:
+            count = file_size // CacheEvictionEvent.SIZE
         print(f"Total records: {count}")
     else:
         if log_type == 'access':
             count = read_access_log(args.logfile, args.limit)
-        else:
+        elif log_type == 'insertion':
             count = read_insertion_log(args.logfile, args.limit)
+        else:
+            count = read_eviction_log(args.logfile, args.limit)
 
         print(f"\nTotal records read: {count}", file=sys.stderr)
 
