@@ -380,7 +380,7 @@ static inline void track_folio_insertion(struct folio *folio) {
 		new_page_state.first_access_time = timestamp;
 		new_page_state.prev_access_time = 0;
 		new_page_state.frequency = 0;
-		new_page_state.file_size = 0;
+		new_page_state.file_size = file_size;
 		new_page_state.last_access_delta = UNKNOWN_DELTA_NS;
 		new_page_state.prev_access_delta = UNKNOWN_DELTA_NS;
 	}

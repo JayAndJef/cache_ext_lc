@@ -393,6 +393,8 @@ static inline void track_folio_insertion(struct folio *folio) {
 	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
 	struct file_state *file_state = bpf_map_lookup_elem(&per_file_map, &fkey);
 
+	u64 file_size = get_folio_file_size(folio);
+
 	struct tracer_page_state new_page_state;
 	if (page_state) {
 		new_page_state.first_access_time = page_state->first_access_time;
@@ -405,7 +407,7 @@ static inline void track_folio_insertion(struct folio *folio) {
 		new_page_state.first_access_time = timestamp;
 		new_page_state.prev_access_time = 0;
 		new_page_state.frequency = 0;
-		new_page_state.file_size = 0;
+		new_page_state.file_size = file_size;
 		new_page_state.last_access_delta = UNKNOWN_DELTA_NS;
 		new_page_state.prev_access_delta = UNKNOWN_DELTA_NS;
 	}
