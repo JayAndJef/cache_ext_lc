@@ -247,7 +247,8 @@ int main(int argc, char **argv)
 	}
 
 	// Initialize directory watcher
-	if (init_dir_watcher(skel->maps.inode_watchlist, args.watch_dir) != 0) {
+	if (initialize_watch_dir_map(args.watch_dir,
+	                 bpf_map__fd(skel->maps.inode_watchlist), true) != 0) {
 		fprintf(stderr, "Failed to initialize directory watcher\n");
 		goto cleanup;
 	}
@@ -340,4 +341,3 @@ cleanup:
 
 	return ret;
 }
-

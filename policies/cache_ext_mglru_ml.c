@@ -356,7 +356,7 @@ int main(int argc, char **argv)
 
 	// Initialize inode_watchlist map
 	ret = initialize_watch_dir_map(args.watch_dir,
-				       bpf_map__fd(skel->maps.inode_watchlist), false);
+				       bpf_map__fd(skel->maps.inode_watchlist), true);
 	if (ret) {
 		perror("Failed to initialize inode watchlist map");
 		goto cleanup;
@@ -424,4 +424,3 @@ cleanup:
 	cache_ext_mglru_ml_bpf__destroy(skel);
 	return 0;
 }
-
