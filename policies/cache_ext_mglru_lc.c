@@ -246,7 +246,20 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	// Initialize directory watcher
+	// Get full path for watch directory
+	char watch_dir_full_path[PATH_MAX];
+	if (!realpath(args.watch_dir, watch_dir_full_path)) {
+		fprintf(stderr, "Failed to resolve watch_dir path: %s\n", strerror(errno));
+		goto cleanup;
+	}
+
+	// Set watch directory path in BPF rodata
+	skel->rodata->watch_dir_path_len = strlen(watch_dir_full_path);
+	strcpy((char *)skel->rodata->watch_dir_path, watch_dir_full_path);
+
+	printf("Watching directory: %s\n", watch_dir_full_path);
+
+	// Initialize directory watcher (populate inode watchlist)
 	if (initialize_watch_dir_map(args.watch_dir,
 	                 bpf_map__fd(skel->maps.inode_watchlist), true) != 0) {
 		fprintf(stderr, "Failed to initialize directory watcher\n");
