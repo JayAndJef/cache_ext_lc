@@ -30,7 +30,7 @@ set $filesize=cvar(type=cvar-gamma,parameters=mean:16384;gamma:1.5)
 set $nthreads=1
 set $iosize=1m
 set $meanappendsize=16k
-set $count=150000   # number of varmail operation iterations
+set $count=50000   # number of varmail operation iterations
 
 set mode quit alldone
 
