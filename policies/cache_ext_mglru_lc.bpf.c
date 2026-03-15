@@ -214,27 +214,23 @@ static inline void track_folio_access(struct folio *folio) {
 	u64 page_time_delta = UNKNOWN_DELTA_NS;
 	u64 page_time_delta2 = UNKNOWN_DELTA_NS;
 	bool has_page_delta = false;
-	bool has_page_delta2 = false;
 	if (page_state) {
 		if (timestamp >= page_state->last_access_time)
 			page_time_delta = timestamp - page_state->last_access_time;
 		if (page_state->prev_access_time && timestamp >= page_state->prev_access_time)
 			page_time_delta2 = timestamp - page_state->prev_access_time;
 		has_page_delta = page_state->last_access_delta != UNKNOWN_DELTA_NS;
-		has_page_delta2 = page_state->prev_access_delta != UNKNOWN_DELTA_NS;
 	}
 
 	u64 inode_time_delta = UNKNOWN_DELTA_NS;
 	u64 inode_time_delta2 = UNKNOWN_DELTA_NS;
 	bool has_inode_delta = false;
-	bool has_inode_delta2 = false;
 	if (file_state) {
 		if (timestamp >= file_state->last_access_time)
 			inode_time_delta = timestamp - file_state->last_access_time;
 		if (file_state->prev_access_time && timestamp >= file_state->prev_access_time)
 			inode_time_delta2 = timestamp - file_state->prev_access_time;
 		has_inode_delta = file_state->last_access_delta != UNKNOWN_DELTA_NS;
-		has_inode_delta2 = file_state->prev_access_delta != UNKNOWN_DELTA_NS;
 	}
 
 	u32 seq_distance = UNKNOWN_OFFSET_DELTA;
