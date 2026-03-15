@@ -257,11 +257,15 @@ static inline void track_folio_access(struct folio *folio) {
 		u64 half_life_ns = 1000000000ULL;
 		if (!has_inode_delta) {
 			inode_hotness_ema = file_state->hotness_ema;
+		} else if (inode_time_delta == 0) {
+			inode_hotness_ema = file_state->hotness_ema + 1000;
 		} else {
-			u64 delta_ns = inode_time_delta;
-			u64 half_lives = delta_ns / half_life_ns;
-			u32 decay = 500;
-			if (half_lives < 10) {
+			u64 decay;
+			if (inode_time_delta < half_life_ns) {
+				u64 ratio = (inode_time_delta * 1000) / half_life_ns;
+				decay = 1000 - (ratio / 2);
+			} else {
+				u64 half_lives = inode_time_delta / half_life_ns;
 				if (half_lives > 10)
 					decay = 0;
 				else
@@ -274,12 +278,14 @@ static inline void track_folio_access(struct folio *folio) {
 
 	u32 frequency = 1000;
 	if (page_state) {
-		if (page_state->frequency > 0) {
-			u64 delta_ns = page_time_delta;
+		if (has_page_delta && page_time_delta > 0) {
 			u64 half_life_ns = 1000000000ULL;
-			u64 half_lives = delta_ns / half_life_ns;
-			u32 decay = 500;
-			if (half_lives < 10) {
+			u64 decay;
+			if (page_time_delta < half_life_ns) {
+				u64 ratio = (page_time_delta * 1000) / half_life_ns;
+				decay = 1000 - (ratio / 2);
+			} else {
+				u64 half_lives = page_time_delta / half_life_ns;
 				if (half_lives > 10)
 					decay = 0;
 				else
