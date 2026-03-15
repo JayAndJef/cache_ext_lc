@@ -575,7 +575,6 @@ void BPF_STRUCT_OPS(mglru_folio_added, struct folio *folio)
 		bpf_printk("cache_ext: Failed to add folio to sampling_list\n");
 		return;
 	}
-	dbg_printk("cache_ext: Added folio to sampling_list\n");
 }
 
 void BPF_STRUCT_OPS(mglru_folio_accessed, struct folio *folio)
