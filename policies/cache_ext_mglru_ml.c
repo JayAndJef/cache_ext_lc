@@ -18,6 +18,9 @@
 // For JSON parsing
 #include <json-c/json.h>
 
+#define NUM_MODEL_FEATURES 8
+#define MAX_BINS 10
+
 char *USAGE = "Usage: ./cache_ext_mglru_ml --watch_dir <dir> --cgroup_path <path> --model_file <json> [--log_dir <dir>]\n";
 struct cmdline_args {
 	char *watch_dir;
@@ -70,90 +73,86 @@ static uint64_t access_count = 0;
 static uint64_t insertion_count = 0;
 
 struct cache_access_fields {
-    uint64_t timestamp;        // ts: bpf_ktime_get_ns()
-    uint64_t page_time_delta;  // pd: delta since last page access (ns)
-    uint64_t page_time_delta2; // p2: delta since last two page access (ns)
-    uint64_t inode_time_delta; // id: delta since last inode access (ns)
-    uint64_t inode_time_delta2;// i2: delta since last two inode access (ns)
-    uint32_t major;            // dm: device major
-    uint32_t minor;            // dn: device minor
-    uint64_t ino;              // in: inode number (i_ino)
-    uint64_t offset;           // of: page index (folio index)
-    uint32_t seq_distance;     // sd: pages away from last inode offset
-    uint64_t file_size;        // sz: file size
-    uint32_t frequency;        // fq: frequency
-    uint32_t inode_hotness_ema;// ie: inode hotness EMA
+	uint64_t timestamp;
+	uint64_t page_time_delta;
+	uint64_t page_time_delta2;
+	uint64_t inode_time_delta;
+	uint64_t inode_time_delta2;
+	uint32_t major;
+	uint32_t minor;
+	uint64_t ino;
+	uint64_t offset;
+	uint32_t seq_distance;
+	uint64_t file_size;
+	uint32_t frequency;
+	uint32_t inode_hotness_ema;
 };
 
 struct cache_insertion_event {
-    uint64_t timestamp;   /* t: bpf_ktime_get_ns() */
-    uint32_t major;       /* d: device major */
-    uint32_t minor;       /* d: device minor */
-    uint64_t ino;         /* i: inode number (data.i_ino) */
-    uint64_t index;       /* x: page index (data.index) */
+	uint64_t timestamp;
+	uint32_t major;
+	uint32_t minor;
+	uint64_t ino;
+	uint64_t index;
 };
 
 static int handle_access(void *ctx, void *data, size_t len)
 {
-    struct cache_access_fields *access_event = data;
+	struct cache_access_fields *access_event = data;
 
-    if (access_log_fd >= 0) {
-        ssize_t written = write(access_log_fd, access_event, sizeof(*access_event));
-        if (written != sizeof(*access_event)) {
-            fprintf(stderr, "Failed to write access event: %s\n", strerror(errno));
-        } else {
-            access_count++;
-        }
-    }
+	if (access_log_fd >= 0) {
+		ssize_t written = write(access_log_fd, access_event, sizeof(*access_event));
+		if (written != sizeof(*access_event)) {
+			fprintf(stderr, "Failed to write access event\n");
+		}
+	}
 
-    return 0;
+	access_count++;
+	if (access_count % 10000 == 0) {
+		printf("Logged %lu access events\n", access_count);
+	}
+
+	return 0;
 }
 
 static int handle_insertion(void *ctx, void *data, size_t len)
 {
-    struct cache_insertion_event *insertion_event = data;
+	struct cache_insertion_event *insertion_event = data;
 
-    if (insertion_log_fd >= 0) {
-        ssize_t written = write(insertion_log_fd, insertion_event, sizeof(*insertion_event));
-        if (written != sizeof(*insertion_event)) {
-            fprintf(stderr, "Failed to write insertion event: %s\n", strerror(errno));
-        } else {
-            insertion_count++;
-        }
-    }
-
-    return 0;
-}
-
-static volatile bool exiting = false;
-
-static void sig_handler(int sig)
-{
-	exiting = true;
-}
-
-static int open_log_file(const char *log_dir, const char *filename)
-{
-	char filepath[PATH_MAX];
-	time_t now = time(NULL);
-	struct tm *tm_info = localtime(&now);
-	char timestamp[64];
-
-	strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", tm_info);
-	snprintf(filepath, sizeof(filepath), "%s/%s_%s.bin", log_dir, filename, timestamp);
-
-	int fd = open(filepath, O_WRONLY | O_CREAT | O_APPEND, 0644);
-	if (fd < 0) {
-		fprintf(stderr, "Failed to open log file %s: %s\n", filepath, strerror(errno));
-		return -1;
+	if (insertion_log_fd >= 0) {
+		ssize_t written = write(insertion_log_fd, insertion_event, sizeof(*insertion_event));
+		if (written != sizeof(*insertion_event)) {
+			fprintf(stderr, "Failed to write insertion event\n");
+		}
 	}
 
-	printf("Logging to: %s\n", filepath);
-	return fd;
+	insertion_count++;
+	if (insertion_count % 10000 == 0) {
+		printf("Logged %lu insertion events\n", insertion_count);
+	}
+
+	return 0;
 }
 
-#define MAX_BINS 10
-#define NUM_MODEL_FEATURES 8
+static void cleanup_logs()
+{
+	if (access_log_fd >= 0) {
+		close(access_log_fd);
+		access_log_fd = -1;
+	}
+	if (insertion_log_fd >= 0) {
+		close(insertion_log_fd);
+		insertion_log_fd = -1;
+	}
+	if (rb_access) {
+		ring_buffer__free(rb_access);
+		rb_access = NULL;
+	}
+	if (rb_insertion) {
+		ring_buffer__free(rb_insertion);
+		rb_insertion = NULL;
+	}
+}
 
 static int load_model_weights(const char *model_file, struct cache_ext_mglru_ml_bpf *skel)
 {
@@ -280,15 +279,10 @@ int main(int argc, char **argv)
 	struct cache_ext_mglru_ml_bpf *skel = NULL;
 	struct bpf_link *link = NULL;
 	int cgroup_fd = -1;
-
-	// Set up signal handler
-	signal(SIGINT, sig_handler);
-	signal(SIGTERM, sig_handler);
-
 	libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
 	// Parse command line arguments
-	struct cmdline_args args = { 0 };
+	struct cmdline_args args = { .log_dir = "/var/log/cache_ext" };
 	struct argp argp = { options, parse_opt, 0, 0 };
 	argp_parse(&argp, argc, argv, 0, 0, &args);
 
@@ -308,25 +302,9 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	// Set default log directory if not specified
-	if (args.log_dir == NULL) {
-		args.log_dir = "/var/log/cache_ext";
-	}
-
-	// Create log directory if it doesn't exist
-	struct stat st = {0};
-	if (stat(args.log_dir, &st) == -1) {
-		if (mkdir(args.log_dir, 0755) == -1) {
-			fprintf(stderr, "Failed to create log directory %s: %s\n",
-				args.log_dir, strerror(errno));
-			return 1;
-		}
-	}
-
 	// Does watch_dir exist?
 	if (access(args.watch_dir, F_OK) == -1) {
-		fprintf(stderr, "Directory does not exist: %s\n",
-			args.watch_dir);
+		fprintf(stderr, "Directory does not exist: %s\n", args.watch_dir);
 		return 1;
 	}
 
@@ -337,7 +315,6 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	// TODO: Enable longer length
 	if (strlen(watch_dir_full_path) > 128) {
 		fprintf(stderr, "watch_dir path too long\n");
 		return 1;
@@ -348,19 +325,6 @@ int main(int argc, char **argv)
 	if (cgroup_fd < 0) {
 		perror("Failed to open cgroup path");
 		return 1;
-	}
-
-	// Open log files
-	access_log_fd = open_log_file(args.log_dir, "cache_access");
-	if (access_log_fd < 0) {
-		fprintf(stderr, "Failed to open access log file\n");
-		goto cleanup;
-	}
-
-	insertion_log_fd = open_log_file(args.log_dir, "cache_insertion");
-	if (insertion_log_fd < 0) {
-		fprintf(stderr, "Failed to open insertion log file\n");
-		goto cleanup;
 	}
 
 	// Open skel
@@ -393,11 +357,43 @@ int main(int argc, char **argv)
 	// Initialize inode_watchlist map
 	ret = initialize_watch_dir_map(args.watch_dir,
 				       bpf_map__fd(skel->maps.inode_watchlist), false);
+	if (ret) {
+		perror("Failed to initialize inode watchlist map");
+		goto cleanup;
+	}
+
+	// Setup logging if log_dir is specified
+	if (args.log_dir) {
+		mkdir(args.log_dir, 0755);
+
+		char access_log_path[PATH_MAX];
+		char insertion_log_path[PATH_MAX];
+		time_t now = time(NULL);
+		snprintf(access_log_path, sizeof(access_log_path),
+			 "%s/access_%ld.bin", args.log_dir, now);
+		snprintf(insertion_log_path, sizeof(insertion_log_path),
+			 "%s/insertion_%ld.bin", args.log_dir, now);
+
+		access_log_fd = open(access_log_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		insertion_log_fd = open(insertion_log_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+		if (access_log_fd < 0 || insertion_log_fd < 0) {
+			fprintf(stderr, "Warning: Failed to open log files\n");
+		} else {
+			printf("Logging to:\n  %s\n  %s\n", access_log_path, insertion_log_path);
+		}
+
+		// Setup ring buffers
+		rb_access = ring_buffer__new(bpf_map__fd(skel->maps.rb_access),
+					      handle_access, NULL, NULL);
+		rb_insertion = ring_buffer__new(bpf_map__fd(skel->maps.rb_insertion),
+						handle_insertion, NULL, NULL);
+	}
 
 	// Attach cache_ext_ops to the specific cgroup
 	link = bpf_map__attach_cache_ext_ops(skel->maps.mglru_ml_ops, cgroup_fd);
 	if (link == NULL) {
-		perror("Failed to attach cache_ext_ops to cgroup");
+		perror("Failed to attach BPF cache_ext_ops to cgroup");
 		goto cleanup;
 	}
 
@@ -408,68 +404,24 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	rb_access = ring_buffer__new(bpf_map__fd(skel->maps.rb_access), handle_access, NULL, NULL);
-	if (!rb_access) {
-		perror("Failed to create ring buffer for access events");
-		goto cleanup;
+	printf("Successfully attached. Press Ctrl-C to exit.\n");
+
+	// Poll ring buffers if logging is enabled
+	if (rb_access && rb_insertion) {
+		while (1) {
+			ring_buffer__poll(rb_access, 100);
+			ring_buffer__poll(rb_insertion, 100);
+		}
+	} else {
+		// Wait for keyboard input
+		getchar();
 	}
-
-    rb_insertion = ring_buffer__new(bpf_map__fd(skel->maps.rb_insertion), handle_insertion, NULL, NULL);
-    if (!rb_insertion) {
-        perror("Failed to create ring buffer for insertion events");
-        goto cleanup;
-    }
-
-	printf("Successfully attached. Logging to binary files. Press Ctrl+C to exit...\n");
-
-	time_t last_stats_time = time(NULL);
-	while (!exiting) {
-		int err;
-
-        err = ring_buffer__poll(rb_access, 100);
-        if (err < 0 && err != -EINTR) {
-            fprintf(stderr, "Error polling access ring buffer: %d\n", err);
-            break;
-        }
-
-        err = ring_buffer__poll(rb_insertion, 100);
-        if (err < 0 && err != -EINTR) {
-            fprintf(stderr, "Error polling insertion ring buffer: %d\n", err);
-            break;
-        }
-
-        // Print statistics every 10 seconds
-        time_t now = time(NULL);
-        if (now - last_stats_time >= 10) {
-            printf("Stats: %lu access events, %lu insertion events",
-                   access_count, insertion_count);
-            last_stats_time = now;
-        }
-	}
-
-	printf("\nExiting...\n");
-	printf("Final stats: %lu access events, %lu insertion events\n",
-	       access_count, insertion_count);
-
-	ret = 0;
 
 cleanup:
-    if (rb_access)
-        ring_buffer__free(rb_access);
-    if (rb_insertion)
-        ring_buffer__free(rb_insertion);
-    if (access_log_fd >= 0) {
-        fsync(access_log_fd);
-        close(access_log_fd);
-    }
-    if (insertion_log_fd >= 0) {
-        fsync(insertion_log_fd);
-        close(insertion_log_fd);
-    }
-    /* no logger file to close; logger printed to stdout */
-    if (cgroup_fd >= 0)
-        close(cgroup_fd);
-    bpf_link__destroy(link);
-    cache_ext_mglru_ml_bpf__destroy(skel);
-    return ret;
+	cleanup_logs();
+	close(cgroup_fd);
+	bpf_link__destroy(link);
+	cache_ext_mglru_ml_bpf__destroy(skel);
+	return 0;
 }
+
