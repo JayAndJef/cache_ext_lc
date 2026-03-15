@@ -485,9 +485,6 @@ static inline s64 compute_ml_score(struct folio *folio) {
 	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
 	struct file_state *file_state = bpf_map_lookup_elem(&per_file_map, &fkey);
 
-	bpf_printk("page last access: %llu", page_state->last_access_time);
-	bpf_printk("file last access: %llu", file_state->last_access_time);
-
 	if (!page_state) {
 		dbg_printk("failed to lookup page state");
 		return S64_MAX;
@@ -496,6 +493,9 @@ static inline s64 compute_ml_score(struct folio *folio) {
 		dbg_printk("failed to lookup file state");
 		return S64_MAX;
 	}
+
+	bpf_printk("page last access: %llu", page_state->last_access_time);
+	bpf_printk("file last access: %llu", file_state->last_access_time);
 
 	dbg_printk("page access time at %llu", page_state->last_access_time);
 	dbg_printk("file access time at %llu", file_state->last_access_time);
