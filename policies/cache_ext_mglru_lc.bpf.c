@@ -13,7 +13,7 @@ char _license[] SEC("license") = "GPL";
 #define UNKNOWN_DELTA_NS 0xffffffffffffffffULL
 #define UNKNOWN_OFFSET_DELTA 0xffffffffU
 
-// #define DEBUG
+#define DEBUG
 #ifdef DEBUG
 #define dbg_printk(fmt, ...) bpf_printk(fmt, ##__VA_ARGS__)
 #else
@@ -548,4 +548,3 @@ struct cache_ext_ops mglru_lc_ops = {
 	.folio_evicted = (void *)mglru_lc_folio_evicted,
 	.folio_added = (void *)mglru_lc_folio_added,
 };
-
