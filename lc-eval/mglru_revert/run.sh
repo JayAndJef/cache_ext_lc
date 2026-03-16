@@ -1,0 +1,65 @@
+#!/bin/bash
+# Restored pre-sampling MGLRU-LC tracer collection script
+set -eu -o pipefail
+
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+	echo "Usage: $0 <workload_file> [cgroup_memory]"
+	echo "Example: $0 /path/to/workload.f 1G"
+	echo "  cgroup_memory: Optional memory limit (e.g., 512M, 1G, 2G). Default: 1G"
+	exit 1
+fi
+
+WORKLOAD_FILE="$1"
+
+if [ ! -f "$WORKLOAD_FILE" ]; then
+	echo "Error: Workload file not found: $WORKLOAD_FILE"
+	exit 1
+fi
+
+CGROUP_MEMORY="${2:-1G}"
+
+if ! uname -r | grep -q "cache-ext"; then
+	echo "This script is intended to be run on a cache_ext kernel."
+	echo "Please switch to the cache_ext kernel and try again."
+	exit 1
+fi
+
+SCRIPT_PATH=$(realpath $0)
+BASE_DIR=$(realpath "$(dirname $SCRIPT_PATH)/../../")
+BENCH_PATH="$BASE_DIR/lc-bench"
+POLICY_PATH="$BASE_DIR/policies"
+WATCH_DIR="/tmp"
+RESULTS_PATH="$BASE_DIR/results"
+
+ITERATIONS=1
+
+mkdir -p "$RESULTS_PATH"
+
+if ! "$BASE_DIR/utils/disable-mglru.sh"; then
+	echo "Failed to disable MGLRU. Please check the script."
+	exit 1
+fi
+
+echo "Running restored pre-sampling mglru_lc with workload: $WORKLOAD_FILE memory: $CGROUP_MEMORY"
+python3 "$BENCH_PATH/bench_mglru_lc_revert.py" \
+	--cpu 4 \
+	--policy-loader "$POLICY_PATH/cache_ext_mglru_lc_revert.out" \
+	--results-file "$RESULTS_PATH/mglru_lc_revert_results.json" \
+	--watch-dir "$WATCH_DIR" \
+	--filebench-workload "$WORKLOAD_FILE" \
+	--iterations "$ITERATIONS" \
+	--cgroup-memory "$CGROUP_MEMORY" \
+	--ext-only
+
+echo "Restored pre-sampling MGLRU-LC trace collection completed."
+echo "Results saved to $RESULTS_PATH/mglru_lc_revert_results.json"
+
+echo "Cleaning up cache_ext processes..."
+ps aux | grep "sudo.*cache_ext.*\.out" | grep -v grep | awk '{print $2}' | while read pid; do
+	echo "  Killing process $pid"
+	sudo kill -15 "$pid" 2>/dev/null || true
+done
+
+sudo rm /home/vagrant/cache_ext_lc/results/*.json
+
+echo "Cleanup complete."
