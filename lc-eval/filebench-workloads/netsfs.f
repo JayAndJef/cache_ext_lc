@@ -32,7 +32,7 @@ set $meandirwidth=20
 set $nthreads=1
 set $nfiles=100000
 set $sync=false
-set $count=10000   # number of netsfs request-loop iterations
+set $count=100000   # number of netsfs request-loop iterations
 
 set mode quit alldone
 
