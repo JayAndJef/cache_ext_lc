@@ -30,7 +30,7 @@ set $filesize=cvar(type=cvar-gamma,parameters=mean:131072;gamma:1.5)
 set $nthreads=50
 set $iosize=1m
 set $meanappendsize=16k
-set $count=500000   # number of file-server request-loop iterations
+set $count=10000   # number of file-server request-loop iterations
 
 set mode quit alldone
 

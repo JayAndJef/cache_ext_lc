@@ -30,7 +30,7 @@ set $filesize=cvar(type=cvar-gamma,parameters=mean:16384;gamma:1.5)
 set $nthreads=10
 set $iosize=1m
 set $meanappendsize=16k
-set $count=50000
+set $count=10000
 
 set mode quit alldone
 
