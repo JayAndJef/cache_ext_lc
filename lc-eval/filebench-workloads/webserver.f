@@ -27,9 +27,12 @@ set $dir=/tmp
 set $nfiles=1000
 set $meandirwidth=20
 set $filesize=cvar(type=cvar-gamma,parameters=mean:16384;gamma:1.5)
-set $nthreads=100
+set $nthreads=10
 set $iosize=1m
 set $meanappendsize=16k
+set $count=50000
+
+set mode quit alldone
 
 define fileset name=bigfileset,path=$dir,size=$filesize,entries=$nfiles,dirwidth=$meandirwidth,prealloc=100,readonly
 define fileset name=logfiles,path=$dir,size=$filesize,entries=1,dirwidth=$meandirwidth,prealloc
@@ -69,9 +72,11 @@ define process name=filereader,instances=1
     flowop readwholefile name=readfile10,fd=1,iosize=$iosize
     flowop closefile name=closefile10,fd=1
     flowop appendfilerand name=appendlog,filesetname=logfiles,iosize=$meanappendsize,fd=2
+    flowop finishoncount name=finish,value=$count
   }
 }
 
 echo  "Web-server Version 3.1 personality successfully loaded"
+echo  "Modified for deterministic single-threaded iteration-based execution (50000 iterations)"
 
 run 60

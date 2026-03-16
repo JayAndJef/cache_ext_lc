@@ -30,7 +30,9 @@ set $filesize=cvar(type=cvar-gamma,parameters=mean:131072;gamma:1.5)
 set $nthreads=50
 set $iosize=1m
 set $meanappendsize=16k
-set $runtime=60
+set $count=500000   # number of file-server request-loop iterations
+
+set mode quit alldone
 
 define fileset name=bigfileset,path=$dir,size=$filesize,entries=$nfiles,dirwidth=$meandirwidth,prealloc=80
 
@@ -49,9 +51,11 @@ define process name=filereader,instances=1
     flowop closefile name=closefile3,fd=1
     flowop deletefile name=deletefile1,filesetname=bigfileset
     flowop statfile name=statfile1,filesetname=bigfileset
+    flowop finishoncount name=finish,value=$count
   }
 }
 
 echo  "File-server Version 3.0 personality successfully loaded"
+echo  "Modified for bounded iteration-based execution (1000 iterations)"
 
-run $runtime
+run 120

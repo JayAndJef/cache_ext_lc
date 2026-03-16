@@ -32,8 +32,12 @@ set $meandirwidth=20
 set $nthreads=1
 set $nfiles=100000
 set $sync=false
+set $count=10000   # number of netsfs request-loop iterations
+
+set mode quit alldone
 
 eventgen rate=$eventrate
+
 
 set $wrtiosize = randvar(type=tabular, min=1k, round=1k, randtable =
 {{ 0,   1k,    7k},
@@ -109,9 +113,11 @@ define process name=netclient,instances=1
     flowop appnd name=appnd1, iters=3
     flowop statfile name=statfile1,filesetname=bigfileset,indexed=$fileidx
     flowop eventlimit name=ratecontrol
+    flowop finishoncount name=finish,value=$count
   }
 }
 
 echo  "NetworkFileServer Version 1.0 personality successfully loaded"
+echo  "Modified for deterministic single-threaded iteration-based execution (600 iterations)"
 
-run 60
+run 120
