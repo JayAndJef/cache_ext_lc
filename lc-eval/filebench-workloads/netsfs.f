@@ -113,11 +113,11 @@ define process name=netclient,instances=1
     flowop appnd name=appnd1, iters=3
     flowop statfile name=statfile1,filesetname=bigfileset,indexed=$fileidx
     flowop eventlimit name=ratecontrol
-    flowop finishoncount name=finish,value=$count
+    flowop finishoncount name=finish,value=$count,target=statfile1
   }
 }
 
 echo  "NetworkFileServer Version 1.0 personality successfully loaded"
-echo  "Modified for deterministic single-threaded iteration-based execution (600 iterations)"
+echo  "Modified for deterministic single-threaded iteration-based execution (100000 iterations)"
 
 run 120
