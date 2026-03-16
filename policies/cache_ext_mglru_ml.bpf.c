@@ -80,7 +80,7 @@ struct {
 // Model Loading //
 ///////////////////
 
-#define NUM_MODEL_FEATURES 8
+#define NUM_MODEL_FEATURES 9
 #define MAX_BINS 10
 
 enum model_features {
@@ -92,6 +92,7 @@ enum model_features {
 	ID = 5,  // inode delta t
 	ID2 = 6, // inode delta t 2
 	IE = 7,  // inode hotness (ema)
+	TSA = 8, // time since last access at eviction
 };
 
 struct {
@@ -498,6 +499,12 @@ static inline s64 compute_ml_score(struct folio *folio) {
 	dbg_printk("page access time at %llu", page_state->last_access_time);
 	dbg_printk("file access time at %llu", file_state->last_access_time);
 
+	u64 current_time = bpf_ktime_get_ns();
+	u64 time_since_access = 0;
+	if (current_time >= page_state->last_access_time) {
+		time_since_access = current_time - page_state->last_access_time;
+	}
+
 	// Extract raw features
 	u64 raw_features[NUM_MODEL_FEATURES];
 	raw_features[PD] = page_state->last_access_delta;
@@ -508,6 +515,7 @@ static inline s64 compute_ml_score(struct folio *folio) {
 	raw_features[ID] = file_state->last_access_delta;
 	raw_features[ID2] = file_state->prev_access_delta;
 	raw_features[IE] = file_state->hotness_ema;
+	raw_features[TSA] = time_since_access;
 
 	s64 score = 0;
 
@@ -539,6 +547,7 @@ static inline s64 compute_ml_score(struct folio *folio) {
 	PROCESS_FEATURE(5);
 	PROCESS_FEATURE(6);
 	PROCESS_FEATURE(7);
+	PROCESS_FEATURE(8);
 
 #undef PROCESS_FEATURE
 

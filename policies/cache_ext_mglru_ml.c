@@ -18,7 +18,7 @@
 // For JSON parsing
 #include <json-c/json.h>
 
-#define NUM_MODEL_FEATURES 8
+#define NUM_MODEL_FEATURES 9
 #define MAX_BINS 10
 
 char *USAGE = "Usage: ./cache_ext_mglru_ml --watch_dir <dir> --cgroup_path <path> --model_file <json> [--log_dir <dir>]\n";
