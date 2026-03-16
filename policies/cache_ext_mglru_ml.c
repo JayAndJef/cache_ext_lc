@@ -221,24 +221,43 @@ static int load_model_weights(const char *model_file, struct cache_ext_mglru_ml_
 		struct json_object *n_bins_obj;
 		json_object_object_get_ex(feat_obj, "n_bins", &n_bins_obj);
 		__u8 n_bins = (__u8)json_object_get_int(n_bins_obj);
+		if (n_bins == 0 || n_bins > MAX_BINS) {
+			fprintf(stderr, "Invalid n_bins for feature %d: %u\n", feat_idx, n_bins);
+			json_object_put(root);
+			return -1;
+		}
 
 		// Get bin_edges
 		struct json_object *bin_edges_arr;
 		json_object_object_get_ex(feat_obj, "bin_edges", &bin_edges_arr);
 		int n_edges = json_object_array_length(bin_edges_arr);
+		if (n_edges != n_bins - 1) {
+			fprintf(stderr,
+				"Invalid bin_edges length for feature %d: expected %u, got %d\n",
+				feat_idx, n_bins - 1, n_edges);
+			json_object_put(root);
+			return -1;
+		}
 
-		__u64 bin_edges[MAX_BINS];
+		__u64 bin_edges[MAX_BINS] = {};
 		for (int i = 0; i < n_edges && i < MAX_BINS; i++) {
 			struct json_object *edge_obj = json_object_array_get_idx(bin_edges_arr, i);
-			bin_edges[i] = json_object_get_int(edge_obj);
+			bin_edges[i] = json_object_get_uint64(edge_obj);
 		}
 
 		// Get weights_int
 		struct json_object *weights_arr;
 		json_object_object_get_ex(feat_obj, "weights_int", &weights_arr);
 		int n_weights = json_object_array_length(weights_arr);
+		if (n_weights != n_bins) {
+			fprintf(stderr,
+				"Invalid weights_int length for feature %d: expected %u, got %d\n",
+				feat_idx, n_bins, n_weights);
+			json_object_put(root);
+			return -1;
+		}
 
-		int64_t weights[MAX_BINS];
+		int64_t weights[MAX_BINS] = {};
 		for (int i = 0; i < n_weights && i < MAX_BINS; i++) {
 			struct json_object *weight_obj = json_object_array_get_idx(weights_arr, i);
 			weights[i] = (int64_t)json_object_get_int64(weight_obj);
