@@ -2,8 +2,8 @@ m is mib
 g is gib
 
 openfiles=100m run, 110m peak
-mongo=80m run, 86m peak
-randomread=6g run, 6.2g peak
+mongo=70m run, 82m peak
+randomread=5g run, 5.2g peak
 createfiles=830m run, 885m peak
 copyfiles=80m run, 91m peak
 varmail=40m run, 69m peak
