@@ -27,9 +27,12 @@ set $dir=/tmp
 set $nfiles=10000
 set $meandirwidth=1000000
 set $meanfilesize=16k
-set $nthreads=100
+set $nthreads=10
 set $meaniosize=16k
 set $iosize=1m
+set $count=100000   # number of webproxy request-loop iterations
+
+set mode quit alldone
 
 define fileset name=bigfileset,path=$dir,size=$meanfilesize,entries=$nfiles,dirwidth=$meandirwidth,prealloc=80
 
@@ -56,9 +59,10 @@ define process name=proxycache,instances=1
     flowop openfile name=openfile6,filesetname=bigfileset,fd=1
     flowop readwholefile name=readfile6,fd=1,iosize=$iosize
     flowop closefile name=closefile6,fd=1
-    flowop opslimit name=limit
+    flowop finishoncount name=finish,value=$count
   }
 }
 
 echo  "Web proxy-server Version 3.0 personality successfully loaded"
-run 60
+echo  "Modified for bounded execution (10 threads, 100000 iterations)"
+run 120
