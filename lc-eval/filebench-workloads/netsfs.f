@@ -22,12 +22,10 @@
 # Use is subject to license terms.
 #
 # $dir - directory for datafiles
-# $eventrate - event generator rate (0 == free run)
 # $nfiles - number of data files
 # $nthreads - number of worker threads
 
 set $dir=/tmp
-set $eventrate=10
 set $meandirwidth=20
 set $nthreads=1
 set $nfiles=100000
@@ -35,8 +33,6 @@ set $sync=false
 set $count=100000   # number of netsfs request-loop iterations
 
 set mode quit alldone
-
-eventgen rate=$eventrate
 
 
 set $wrtiosize = randvar(type=tabular, min=1k, round=1k, randtable =
@@ -112,7 +108,6 @@ define process name=netclient,instances=1
     flowop rmw name=rmw1, iters=6
     flowop appnd name=appnd1, iters=3
     flowop statfile name=statfile1,filesetname=bigfileset,indexed=$fileidx
-    flowop eventlimit name=ratecontrol
     flowop finishoncount name=finish,value=$count,target=statfile1
   }
 }
