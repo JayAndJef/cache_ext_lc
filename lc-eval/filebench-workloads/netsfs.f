@@ -108,7 +108,7 @@ define process name=netclient,instances=1
     flowop rmw name=rmw1, iters=6
     flowop appnd name=appnd1, iters=3
     flowop statfile name=statfile1,filesetname=bigfileset,indexed=$fileidx
-    flowop finishoncount name=finish,value=$count,target=statfile1
+    flowop finishoncount name=finish,value=$count
   }
 }
 
