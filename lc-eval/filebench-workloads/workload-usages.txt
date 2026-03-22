@@ -8,6 +8,5 @@ createfiles=830m run, 885m peak
 copyfiles=80m run, 91m peak
 varmail=40m run, 69m peak
 oltp=600m run, 640m peak
-fileserver=1540m run, 1600m peak
 webserver=170m run, 190m peak
 webproxy=265m run, 280m peak

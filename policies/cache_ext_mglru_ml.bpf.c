@@ -493,9 +493,6 @@ static inline s64 compute_ml_score(struct folio *folio) {
 		return S64_MAX;
 	}
 
-	dbg_printk("page access time at %llu", page_state->last_access_time);
-	dbg_printk("file access time at %llu", file_state->last_access_time);
-
 	u64 current_time = bpf_ktime_get_ns();
 	u64 time_since_access = 0;
 	if (current_time >= page_state->last_access_time) {
