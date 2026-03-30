@@ -5,7 +5,7 @@ BPFTOOL ?= /usr/local/sbin/bpftool #../../tools/bpf/bpftool/bpftool
 CFLAGS = -O2 -target bpf -D__TARGET_ARCH_$(ARCH) -c -g -Wall
 USERSPACE_CFLAGS = -O2 -fsanitize=address -g -Wall
 USERSPACE_LINKER_FLAGS = -L/usr/local/lib64 -lbpf
-USERSPACE_ML_LINKER_FLAGS = -L/usr/local/lib64 -lbpf -ljson-c
+USERSPACE_ML_LINKER_FLAGS = -L/usr/local/lib64 -L/usr/lib -lbpf -ljson-c
 
 # Define the BPF program source and the output object file
 BPF_SRC = cache_ext_simple.bpf.c cache_ext_mru.bpf.c cache_ext_mglru.bpf.c
@@ -54,8 +54,11 @@ $(VMLINUX_H):
 %.out: %.c %.skel.h
 	$(CLANG) $(USERSPACE_CFLAGS) $< -o $@ $(USERSPACE_LINKER_FLAGS)
 
-# Special rule for ML policy (needs json-c)
+# Special rules for ML policies (need json-c)
 cache_ext_mglru_ml.out: cache_ext_mglru_ml.c cache_ext_mglru_ml.skel.h
+	$(CLANG) $(USERSPACE_CFLAGS) $< -o $@ $(USERSPACE_ML_LINKER_FLAGS)
+
+cache_ext_fifo_ml.out: cache_ext_fifo_ml.c cache_ext_fifo_ml.skel.h
 	$(CLANG) $(USERSPACE_CFLAGS) $< -o $@ $(USERSPACE_ML_LINKER_FLAGS)
 
 clean:
