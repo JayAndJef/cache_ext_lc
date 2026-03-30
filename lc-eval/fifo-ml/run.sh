@@ -49,12 +49,12 @@ if ! "$BASE_DIR/utils/disable-mglru.sh"; then
 	exit 1
 fi
 
-# Run mglru_lc with the workload
-echo "Running mglru_ml with workload: $WORKLOAD_FILE model: $MODEL_FILE memory: $CGROUP_MEMORY"
-python3 "$BENCH_PATH/bench_mglru_ml.py" \
+# Run fifo_ml with the workload
+echo "Running fifo_ml with workload: $WORKLOAD_FILE model: $MODEL_FILE memory: $CGROUP_MEMORY"
+python3 "$BENCH_PATH/bench_fifo_ml.py" \
 	--cpu 4 \
-	--policy-loader "$POLICY_PATH/cache_ext_mglru_ml.out" \
-	--results-file "$RESULTS_PATH/mglru_lc_results.json" \
+	--policy-loader "$POLICY_PATH/cache_ext_fifo_ml.out" \
+	--results-file "$RESULTS_PATH/fifo_ml_results.json" \
 	--model-file "$MODEL_FILE" \
 	--watch-dir "$WATCH_DIR" \
 	--filebench-workload "$WORKLOAD_FILE" \
@@ -62,8 +62,8 @@ python3 "$BENCH_PATH/bench_mglru_ml.py" \
 	--cgroup-memory "$CGROUP_MEMORY" \
 	--ext-only
 
-echo "MGLRU-LC trace collection completed."
-echo "Results saved to $RESULTS_PATH/mglru_lc_results.json"
+echo "FIFO-ML trace collection completed."
+echo "Results saved to $RESULTS_PATH/fifo_ml_results.json"
 
 echo "Cleaning up cache_ext processes..."
 ps aux | grep "sudo.*cache_ext.*\.out" | grep -v grep | awk '{print $2}' | while read pid; do

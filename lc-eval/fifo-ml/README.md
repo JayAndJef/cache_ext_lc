@@ -1,6 +1,6 @@
-# MGLRU_LC data collection script
+# FIFO-ML data collection script
 
-This script runs mglru_lc (MGLRU with learnedcache) under a filebench workload.
+This script runs fifo_ml (FIFO with learnedcache) under a filebench workload.
 
 ## Usage
 

@@ -42,17 +42,17 @@ fi
 # Optional cgroup memory parameter (default: 1G)
 CGROUP_MEMORY="${2:-1G}"
 
-# Run mglru_lc with the workload
-echo "Running mglru_lc with workload: $WORKLOAD_FILE memory: $CGROUP_MEMORY"
-python3 "$BENCH_PATH/bench_mglru_lc.py" \
+# Run fifo_ml with the workload
+echo "Running fifo_ml with workload: $WORKLOAD_FILE memory: $CGROUP_MEMORY"
+python3 "$BENCH_PATH/bench_fifo_ml.py" \
 	--cpu 4 \
-	--policy-loader "$POLICY_PATH/cache_ext_mglru_lc.out" \
-	--results-file "$RESULTS_PATH/mglru_lc_results.json" \
+	--policy-loader "$POLICY_PATH/cache_ext_fifo_ml.out" \
+	--results-file "$RESULTS_PATH/fifo_ml_results.json" \
 	--watch-dir "$WATCH_DIR" \
 	--filebench-workload "$WORKLOAD_FILE" \
 	--iterations "$ITERATIONS" \
 	--cgroup-memory "$CGROUP_MEMORY" \
 	--ext-only
 
-echo "MGLRU-LC trace collection completed."
-echo "Results saved to $RESULTS_PATH/mglru_lc_results.json"
+echo "FIFO-ML trace collection completed."
+echo "Results saved to $RESULTS_PATH/fifo_ml_results.json"

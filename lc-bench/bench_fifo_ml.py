@@ -3,7 +3,7 @@ import os
 from time import time
 from typing import List, Dict
 
-from bench_lib import *
+from bench_lib_ml import *
 
 log = logging.getLogger(__name__)
 
@@ -11,11 +11,11 @@ log = logging.getLogger(__name__)
 CLEANUP_TASKS = []
 
 
-class MGLRULCBenchmark(BenchmarkFramework):
+class FIFOMLBenchmark(BenchmarkFramework):
     def __init__(self, benchresults_cls=BenchResults, cli_args=None):
-        super().__init__("mglru_lc_benchmark", benchresults_cls, cli_args)
+        super().__init__("fifo_ml_benchmark", benchresults_cls, cli_args)
         self.cache_ext_policy = CacheExtPolicy(
-            DEFAULT_CACHE_EXT_CGROUP, self.args.policy_loader, self.args.watch_dir
+            DEFAULT_CACHE_EXT_CGROUP, self.args.policy_loader, self.args.watch_dir, self.args.model_file
         )
         CLEANUP_TASKS.append(lambda: self.cache_ext_policy.stop())
 
@@ -37,6 +37,12 @@ class MGLRULCBenchmark(BenchmarkFramework):
             type=str,
             required=True,
             help="Specify the path to the filebench workload file",
+        )
+        parser.add_argument(
+            "--model-file",
+            type=str,
+            required=True,
+            help="Specify the path to the model.json file",
         )
         parser.add_argument(
             "--ext-only",
@@ -69,7 +75,6 @@ class MGLRULCBenchmark(BenchmarkFramework):
                 configs,
             )
 
-        configs = add_config_option("benchmark", ["mglru_lc"], configs)
         configs = add_config_option(
             "iteration", list(range(1, self.args.iterations + 1)), configs
         )
@@ -117,14 +122,14 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
     global log
     # To ensure that writeback keeps up with the benchmark
-    mglru_lc_bench = MGLRULCBenchmark()
+    fifo_ml_bench = FIFOMLBenchmark()
     # Check that watch dir exists
-    if not os.path.exists(mglru_lc_bench.args.watch_dir):
+    if not os.path.exists(fifo_ml_bench.args.watch_dir):
         raise Exception(
-            "Watch directory not found: %s" % mglru_lc_bench.args.watch_dir
+            "Watch directory not found: %s" % fifo_ml_bench.args.watch_dir
         )
-    log.info("Watch directory: %s", mglru_lc_bench.args.watch_dir)
-    mglru_lc_bench.benchmark()
+    log.info("Watch directory: %s", fifo_ml_bench.args.watch_dir)
+    fifo_ml_bench.benchmark()
 
 
 if __name__ == "__main__":

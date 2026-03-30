@@ -525,7 +525,7 @@ class BenchmarkFramework(ABC):
             "--default-only",
             action="store_true",
             default=False,
-            help="Run only the default config. Helpful for running MGLRU.",
+            help="Run only the default config.",
         )
         parser.add_argument(
             "--iterations",
