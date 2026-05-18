@@ -1,6 +1,6 @@
 # LearnedCache: A Novel eBPF-Driven Neural Model for Page Cache Eviction in the Linux Kernel
 
-I'm looking for an endorser to help preprint LearnedCache onto arXiv - if you or anyone you know is able to, please reach out at zejiaqi \[at] uw \[dot] edu.
+I'm looking for an endorser to help preprint LearnedCache onto arXiv - if you or anyone you know is able to, please reach out at zejiaqi \[at] uw \[dot] edu. The current [paper](https://github.com/JayAndJef/cache_ext_lc/blob/e161850504435e166667e3f03775703a526ba3ff/LearnedCache.pdf) is in this repository.
 
 This repository contains the tracers and policies for LearnedCache. The developed FIFO policies can be found in `/policies`, and harnesses can be found in `/lc-bench` and `/lc-eval`. This repository is a modified fork of the source code and scripts for [cache_ext](https://dl.acm.org/doi/10.1145/3731569.3764820), the framework used for implementation. If using cache_ext, please cite the reference [below](#citation).
 
