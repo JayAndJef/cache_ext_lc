@@ -23,19 +23,8 @@ DEFAULT_BASELINE_CGROUP = "baseline_test"
 
 
 def parse_memory_string(mem_str: str) -> int:
-    """Parse memory string like '512M', '1G', '2G' into bytes.
-
-    Args:
-        mem_str: Memory string (e.g., '512M', '1G', '2G')
-
-    Returns:
-        Memory size in bytes
-
-    Raises:
-        ValueError: If the format is invalid
-    """
+    """Parse memory string like '512M', '1G', '2G' into bytes."""
     mem_str = mem_str.strip().upper()
-
     if mem_str.endswith('G'):
         return int(mem_str[:-1]) * GiB
     elif mem_str.endswith('M'):
@@ -50,13 +39,13 @@ def parse_memory_string(mem_str: str) -> int:
 
 class CacheExtPolicy:
     def set_cgroup(self, cgroup: str):
-        """Set the cgroup path for the policy."""
         self.cgroup_path = f"/sys/fs/cgroup/{cgroup}"
 
-    def __init__(self, cgroup: str, loader_path: str, watch_dir: str):
+    def __init__(self, cgroup: str, loader_path: str, watch_dir: str, model_file: str = None):
         self.set_cgroup(cgroup)
         self.loader_path = loader_path
         self.watch_dir = watch_dir
+        self.model_file = model_file
         self.has_started = False
         self._policy_thread = None
 
@@ -74,18 +63,18 @@ class CacheExtPolicy:
             self.cgroup_path,
         ]
 
+        if self.model_file:
+            cmd += ["--model_file", self.model_file]
+
         if cgroup_size:
             cmd += ["--cgroup_size", str(cgroup_size)]
 
         log.info("Starting policy thread: %s", cmd)
         self._policy_thread = subprocess.Popen(
-            cmd,
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         sleep(10)
 
-        # For some reason, running a command with `sudo` messes up the terminal.
-        # This is a workaround to fix it.
-        # run(["stty", "sane"])
         if self._policy_thread.poll() is not None:
             raise Exception(
                 "Policy thread exited unexpectedly: %s"
@@ -95,16 +84,13 @@ class CacheExtPolicy:
     def stop(self):
         if not self.has_started:
             raise Exception("Policy not started")
-
-        if self._policy_thread.poll() is None:
-            # cmd = ["sudo", "kill", "-15", str(self._policy_thread.pid)]
-            # run(cmd)
-            # run script cleanup
-            pass
-
+        cmd = ["sudo", "kill", "-2", str(self._policy_thread.pid)]
+        run(cmd)
+        out, err = self._policy_thread.communicate()
         with suppress(subprocess.CalledProcessError):
             run(["sudo", "rm", "/sys/fs/bpf/cache_ext/scan_pids"])
-
+        log.info("Policy thread stdout: %s", out.decode("utf-8"))
+        log.info("Policy thread stderr: %s", err.decode("utf-8"))
         self.has_started = False
         self._policy_thread = None
 
@@ -134,13 +120,6 @@ def format_bytes_str(bytes: int):
 
 @contextmanager
 def edit_yaml_file(file_path):
-    """
-    Context manager for editing YAML files while preserving formatting.
-
-    Usage:
-    with edit_yaml_file('path/to/file.yaml') as data:
-        data['key'] = 'new_value'
-    """
     yaml = YAML()
     yaml.preserve_quotes = True
 
@@ -157,7 +136,6 @@ def edit_yaml_file(file_path):
 
 
 def run_command_with_live_output(command, **kwargs):
-    # Default kwargs for Popen
     popen_kwargs = {
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
@@ -165,8 +143,6 @@ def run_command_with_live_output(command, **kwargs):
         "bufsize": 1,
         "universal_newlines": True,
     }
-
-    # Update with any user-provided kwargs
     popen_kwargs.update(kwargs)
 
     process = subprocess.Popen(command, **popen_kwargs)
@@ -174,7 +150,6 @@ def run_command_with_live_output(command, **kwargs):
     stdout_output = []
     stderr_output = []
 
-    # Set stdout and stderr to non-blocking mode
     for pipe in [process.stdout, process.stderr]:
         if pipe:
             os.set_blocking(pipe.fileno(), False)
@@ -199,7 +174,6 @@ def run_command_with_live_output(command, **kwargs):
         if process.poll() is not None:
             break
 
-    # Read any remaining output
     for pipe in [process.stdout, process.stderr]:
         if pipe:
             remaining_output = pipe.read()
@@ -221,7 +195,6 @@ def run_command_with_live_output(command, **kwargs):
 
 
 def run(cmd, *args, **kwargs):
-    # Set check=True
     kwargs["check"] = True
     log.info("Running command: %s" % cmd)
     return subprocess.run(cmd, *args, **kwargs)
@@ -243,9 +216,6 @@ def write_file(path: str, data: str):
 
 
 def enable_cache_ext_for_cgroup(cgroup=DEFAULT_CACHE_EXT_CGROUP):
-    # Note: With the new per-cgroup interface, cache_ext policies are now
-    # attached directly to specific cgroups via the BPF programs,
-    # so we no longer need to enable it globally via /proc/cache_ext_enabled_cgroup
     pass
 
 
@@ -254,12 +224,9 @@ def delete_cgroup(cgroup):
         run(["sudo", "cgdelete", f"memory:{cgroup}"])
 
 
-def recreate_cache_ext_cgroup(cgroup=DEFAULT_CACHE_EXT_CGROUP, limit_in_bytes=4 * GiB):
+def recreate_cache_ext_cgroup(cgroup=DEFAULT_CACHE_EXT_CGROUP, limit_in_bytes=2 * GiB):
     delete_cgroup(cgroup)
-    # Create cache_ext cgroup
     run(["sudo", "cgcreate", "-g", f"memory:{cgroup}"])
-
-    # Set memory limit for cache_ext cgroup
     run(
         [
             "sudo",
@@ -268,7 +235,6 @@ def recreate_cache_ext_cgroup(cgroup=DEFAULT_CACHE_EXT_CGROUP, limit_in_bytes=4 
             "echo %d > /sys/fs/cgroup/%s/memory.max" % (limit_in_bytes, cgroup),
         ]
     )
-
     log.info(
         "cache_ext cgroup %s created with limit %s",
         cgroup,
@@ -276,12 +242,9 @@ def recreate_cache_ext_cgroup(cgroup=DEFAULT_CACHE_EXT_CGROUP, limit_in_bytes=4 
     )
 
 
-def recreate_baseline_cgroup(cgroup=DEFAULT_BASELINE_CGROUP, limit_in_bytes=4 * GiB):
+def recreate_baseline_cgroup(cgroup=DEFAULT_BASELINE_CGROUP, limit_in_bytes=2 * GiB):
     delete_cgroup(cgroup)
-    # Create baseline cgroup
     run(["sudo", "cgcreate", "-g", f"memory:{cgroup}"])
-
-    # Set memory limit for baseline cgroup
     run(
         [
             "sudo",
@@ -322,7 +285,6 @@ def enable_smt():
 
 
 def rsync_folder(source_dir: str, dest_dir: str):
-    # rsync -avpl --delete /mydata/leveldb_db_orig/ /mydata/leveldb_db/
     if not source_dir.endswith("/"):
         source_dir += "/"
     run(["rsync", "-avpl", "--delete", source_dir, dest_dir])
@@ -398,12 +360,10 @@ def exists_config_in_results(results: List[BenchRun], config: Dict) -> bool:
 
 
 def results_select(results: List[BenchRun], config_match: Dict) -> List[BenchRun]:
-    # Select results based on partial config match
     return [r for r in results if config_match.items() <= r.config.items()]
 
 
 def single_result_select(results: List[BenchRun], config_match: Dict) -> BenchRun:
-    # Select results based on partial config match
     matches = [r for r in results if config_match.items() <= r.config.items()]
     if len(matches) != 1:
         raise Exception(
@@ -424,7 +384,6 @@ def add_config_option(name: str, values: List, configs: List[Dict]) -> List[Dict
 
 
 def unique_configs_for_keys(configs: List[Dict], keys: List[str]) -> List[Dict]:
-    # Return the unique configs for the given keys
     unique_configs = []
     for config in configs:
         unique_config = {}
@@ -507,8 +466,6 @@ class BenchmarkFramework(ABC):
             default="results.json",
             help="Path to results file (JSON format)",
         )
-        # parser.add_argument("--runtime", type=int, default=60,
-        #                     help="Runtime in seconds for each benchmark")
         parser.add_argument(
             "--no-reuse-results",
             action="store_true",
@@ -525,7 +482,7 @@ class BenchmarkFramework(ABC):
             "--default-only",
             action="store_true",
             default=False,
-            help="Run only the default config.",
+            help="Run only the default config. Helpful for running MGLRU.",
         )
         parser.add_argument(
             "--iterations",
@@ -541,7 +498,6 @@ class BenchmarkFramework(ABC):
         reuse_results = not self.args.no_reuse_results
         cpu_str = self.args.cpu
 
-        # Parse CPU string
         cpu_amounts = parse_numbers_string(cpu_str)
         log.info(
             "Will benchmark with each of the following amounts of CPU %s" % cpu_amounts
@@ -550,6 +506,10 @@ class BenchmarkFramework(ABC):
         i = 1
         results = []
         while os.path.exists(results_file):
+            if reuse_results:
+                log.info("Will reuse existing results file %s" % results_file)
+                results = parse_results_file(results_file, self.benchresults_cls)
+                break
             log.info("Not reusing results file %s" % results_file)
             if "." in results_file:
                 filename, ext = results_file.rsplit(".", 1)
@@ -585,13 +545,9 @@ class BenchmarkFramework(ABC):
                 "Running benchmark for %s with config %s" % (config["name"], config)
             )
 
-            # Prepare environment for benchmarking
             self.benchmark_prepare(config)
 
-            # Run benchmark
             cmd = self.benchmark_cmd(config)
-
-            # Limit CPUs
             cmd = ["taskset", "-c", "0-%s" % str(config["cpus"] - 1)] + cmd
 
             env = os.environ
@@ -611,7 +567,6 @@ class BenchmarkFramework(ABC):
 
                 log.info("Running command: %s" % cmd)
                 stdout = run_command_with_live_output(cmd, env=env)
-                # stdout = check_output(cmd, encoding="utf-8", env=env)
 
                 if self.second_command:
                     ret_code = second_proc.wait()
@@ -629,7 +584,6 @@ class BenchmarkFramework(ABC):
                 raise e
 
             self.after_benchmark(config)
-            # Save results
             log.info("Parsing results...")
             if self.second_command:
                 bench_run_results = self.parse_results(
