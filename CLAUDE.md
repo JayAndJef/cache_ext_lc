@@ -14,8 +14,8 @@ All policy builds and runs must happen on the custom `cache-ext` Linux kernel. B
 
 - Build all BPF policies + userspace loaders: `./build_policies.sh` (wraps `make -C policies -j`). Outputs `policies/<name>.out` binaries. Clean with `make -C policies clean`.
 - Regenerate `policies/vmlinux.h` (rare): delete it; the Makefile rebuilds it via `bpftool btf dump`.
-- **YCSB+LevelDB (primary benchmark)**: `lc-eval/ycsb/run.sh <leveldb_db_path> [--model-file <model.json>] [--cgroup-memory 10G]`. Runs all cache_ext policies + `fifo_lc` tracer. Adds `fifo_ml` only when `--model-file` is given; errors if that flag is passed to a non-ML invocation. Results go to `results/ycsb_results.json` and `results/ycsb_results_mglru.json`. See `lc-eval/ycsb/README.md` for full details.
-- **filebench tracer** (raw data collection): `lc-eval/fifo/run.sh <workload.f> [cgroup_memory]` — binary logs to `/var/log/cache_ext/`. `lc-eval/fifo-ml/run.sh <workload.f> <model.json> [cgroup_memory]` — ML policy. Workloads in `lc-eval/filebench-workloads/` (sizing notes in `workload-usages.txt`); example models in `lc-eval/fifo-ml/example-models/`.
+- **YCSB+LevelDB (primary benchmark)**: `lc-eval/ycsb/run.sh <leveldb_db_path> [--model-file <model.json>] [--cgroup-memory 10G]`. Runs all cache_ext policies + `fifo_lc` tracer. Adds `fifo_ml` only when `--model-file` is given. Results go to `results/ycsb_results.json` and `results/ycsb_results_mglru.json`. Binary logs from `fifo_lc` go to `/var/log/cache_ext/<benchmark>/iter_<N>/`. See `lc-eval/ycsb/README.md` for full details.
+- **filebench tracer** (`lc-eval/fifo/` and `lc-eval/fifo-ml/`): **broken** — the `bench_fifo_lc.py` / `bench_fifo_ml.py` scripts they depend on have been removed. Use `lc-eval/ycsb/` instead. See READMEs in those directories.
 - **Parse tracer binary logs to CSV**: `policies/read_binary_logs.py`. The struct layouts at the top of that file (`FORMAT = '<QQQQQIIQQI4xQII'`) must stay in sync with `struct cache_access_fields` in both the `.bpf.c` and `.c` for each policy — if you change one, change all three.
 - **Run YCSB bench directly**: `python3 lc-bench/bench_leveldb.py --policy-loader policies/<policy>.out --leveldb-db <db> --bench-binary-dir My-YCSB/build --benchmark ycsb_a,... [--model-file <json>] [--cgroup-memory 10G]`. Pass `--model-file` only with `cache_ext_fifo_ml.out`.
 
@@ -32,7 +32,7 @@ The two LearnedCache policies share infrastructure with the upstream policies (m
 
 ## Benchmark harness architecture
 
-`lc-bench/bench_lib.py` is the single shared library for all LC benchmarks. It is the upstream `bench/bench_lib.py` plus two additions: `MiB` constant and `parse_memory_string()`. The `CacheExtPolicy` class accepts an optional `model_file=None` fourth argument — when set, it passes `--model_file` to the policy loader subprocess. `stop()` sends SIGINT to the sudo process and waits, matching upstream behavior. `bench_lib_ml.py` (the old ML-only fork) is kept for the filebench harnesses but should not be used for new code.
+`lc-bench/bench_lib.py` is the single shared library for all LC benchmarks. It is the upstream `bench/bench_lib.py` plus two additions: `MiB` constant and `parse_memory_string()`. The `CacheExtPolicy` class accepts an optional `model_file=None` fourth argument — when set, it passes `--model_file` to the policy loader subprocess. `start()` accepts an optional `log_dir` argument — when set, passes `--log_dir` to the loader; only `cache_ext_fifo_lc.out` supports this flag. `stop()` sends SIGINT to the sudo process and waits, matching upstream behavior.
 
 `lc-bench/bench_leveldb.py` is the single YCSB+LevelDB benchmark script for all policies. Key behaviors vs the upstream `bench/bench_leveldb.py`:
 - `--cgroup-memory` replaces the hardcoded `10 * GiB` (default still 10G)
@@ -40,6 +40,4 @@ The two LearnedCache policies share infrastructure with the upstream policies (m
 - `--fadvise-hints` and `--default-only` are preserved for baseline comparison
 - s3fifo special case (passes `cgroup_size` to loader) is preserved
 
-The framework flow per config: rsync original DB → temp copy, drop page cache, disable swap/SMT, recreate cgroup, start policy loader (10 s sleep for attach), run `cgexec … run_leveldb`, stop loader (SIGINT + wait), checkpoint JSON results.
-
-Known wart: the filebench `lc-eval/fifo/run.sh` and `lc-eval/fifo-ml/run.sh` end with `sudo rm /home/vagrant/cache_ext_lc/results/*.json` — a hardcoded vagrant path.
+The framework flow per config: rsync original DB → temp copy, drop page cache, disable swap/SMT, recreate cgroup, start policy loader (10 s sleep for attach), run `cgexec … run_leveldb`, stop loader (SIGINT + wait), checkpoint JSON results. For `cache_ext_fifo_lc.out` specifically, `benchmark_prepare` also creates `/var/log/cache_ext/<benchmark>/iter_<N>/` and passes it as `--log_dir`, so each workload+iteration gets its own log directory.

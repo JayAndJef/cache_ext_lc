@@ -48,4 +48,4 @@ Runtime: 240 s per workload, 45 s warmup, 3 iterations each.
 
 - `results/ycsb_results.json` — all cache_ext and LC policies
 - `results/ycsb_results_mglru.json` — baseline MGLRU
-- `/var/log/cache_ext/` — binary access/insertion/eviction logs from `fifo_lc` runs (parse with `policies/read_binary_logs.py`)
+- `/var/log/cache_ext/<benchmark>/iter_<N>/` — binary access/insertion/eviction logs from `fifo_lc` runs, one directory per workload per iteration (e.g. `ycsb_a/iter_1/`). Parse with `policies/read_binary_logs.py`.

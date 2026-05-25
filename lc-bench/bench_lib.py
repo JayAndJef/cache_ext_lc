@@ -49,7 +49,7 @@ class CacheExtPolicy:
         self.has_started = False
         self._policy_thread = None
 
-    def start(self, cgroup_size: int = 0):
+    def start(self, cgroup_size: int = 0, log_dir: str = None):
         if self.has_started:
             raise Exception("Policy already started")
 
@@ -68,6 +68,9 @@ class CacheExtPolicy:
 
         if cgroup_size:
             cmd += ["--cgroup_size", str(cgroup_size)]
+
+        if log_dir:
+            cmd += ["--log_dir", log_dir]
 
         log.info("Starting policy thread: %s", cmd)
         self._policy_thread = subprocess.Popen(
