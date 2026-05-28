@@ -200,7 +200,7 @@ class LevelDBBenchmark(BenchmarkFramework):
 
             policy_loader_name = os.path.basename(self.cache_ext_policy.loader_path)
             if policy_loader_name == "cache_ext_fifo_lc.out":
-                log_dir = "/var/log/cache_ext/%s/iter_%d" % (
+                log_dir = "/mydata/cache_ext_logs/%s/iter_%d" % (
                     config["benchmark"], config["iteration"])
                 run(["sudo", "mkdir", "-p", log_dir])
                 self.cache_ext_policy.start(log_dir=log_dir)

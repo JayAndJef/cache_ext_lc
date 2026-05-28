@@ -4,16 +4,16 @@
 
 ## What this was
 
-`run.sh` drove `lc-bench/bench_fifo_lc.py` (now deleted) to run the `cache_ext_fifo_lc` tracer policy against a filebench workload. It wrote binary access/insertion/eviction logs to `/var/log/cache_ext/` and results to `results/fifo_lc_results.json`.
+`run.sh` drove `lc-bench/bench_fifo_lc.py` (now deleted) to run the `cache_ext_fifo_lc` tracer policy against a filebench workload. It wrote binary access/insertion/eviction logs to `/mydata/cache_ext_logs/` and results to `results/fifo_lc_results.json`.
 
 ## What to use instead
 
 `lc-eval/ycsb/run.sh <leveldb_db_path>` runs `cache_ext_fifo_lc` as one of the benchmark policies. Logs are written to a per-workload, per-iteration directory:
 
 ```
-/var/log/cache_ext/<benchmark>/iter_<N>/mglru_lc_access_<ts>.bin
-/var/log/cache_ext/<benchmark>/iter_<N>/mglru_lc_insertion_<ts>.bin
-/var/log/cache_ext/<benchmark>/iter_<N>/mglru_lc_eviction_<ts>.bin
+/mydata/cache_ext_logs/<benchmark>/iter_<N>/mglru_lc_access_<ts>.bin
+/mydata/cache_ext_logs/<benchmark>/iter_<N>/mglru_lc_insertion_<ts>.bin
+/mydata/cache_ext_logs/<benchmark>/iter_<N>/mglru_lc_eviction_<ts>.bin
 ```
 
 Parse with:

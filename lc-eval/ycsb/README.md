@@ -34,7 +34,7 @@ lc-eval/ycsb/run.sh <leveldb_db_path> --model-file <model.json> --cgroup-memory 
 | `cache_ext_fifo` | Plain FIFO |
 | `cache_ext_mru` | MRU |
 | `cache_ext_mglru` | cache_ext MGLRU implementation |
-| `cache_ext_fifo_lc` | FIFO-LC tracer (emits binary access logs to `/var/log/cache_ext`) |
+| `cache_ext_fifo_lc` | FIFO-LC tracer (emits binary access logs to `/mydata/cache_ext_logs`) |
 | `cache_ext_fifo_ml` | FIFO-ML (requires `--model-file`) |
 | baseline MGLRU | Linux built-in MGLRU, run with `--default-only` |
 
@@ -48,4 +48,4 @@ Runtime: 240 s per workload, 45 s warmup, 3 iterations each.
 
 - `results/ycsb_results.json` — all cache_ext and LC policies
 - `results/ycsb_results_mglru.json` — baseline MGLRU
-- `/var/log/cache_ext/<benchmark>/iter_<N>/` — binary access/insertion/eviction logs from `fifo_lc` runs, one directory per workload per iteration (e.g. `ycsb_a/iter_1/`). Parse with `policies/read_binary_logs.py`.
+- `/mydata/cache_ext_logs/<benchmark>/iter_<N>/` — binary access/insertion/eviction logs from `fifo_lc` runs, one directory per workload per iteration (e.g. `ycsb_a/iter_1/`). Parse with `policies/read_binary_logs.py`.
