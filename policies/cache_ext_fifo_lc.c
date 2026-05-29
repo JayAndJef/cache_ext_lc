@@ -12,10 +12,10 @@
 #include <signal.h>
 #include <time.h>
 
-#include "cache_ext_mglru_lc.skel.h"
+#include "cache_ext_fifo_lc.skel.h"
 #include "dir_watcher.h"
 
-char *USAGE = "Usage: ./cache_ext_mglru_lc --watch_dir <dir> --cgroup_path <path> [--log_dir <dir>]\n";
+char *USAGE = "Usage: ./cache_ext_fifo_lc --watch_dir <dir> --cgroup_path <path> [--log_dir <dir>]\n";
 struct cmdline_args {
 	char *watch_dir;
 	char *cgroup_path;
@@ -179,7 +179,7 @@ static void cleanup_logs()
 int main(int argc, char **argv)
 {
 	int ret = 1;
-	struct cache_ext_mglru_lc_bpf *skel = NULL;
+	struct cache_ext_fifo_lc_bpf *skel = NULL;
 	struct bpf_link *link = NULL;
 	int cgroup_fd = -1;
 	struct cmdline_args args = { 0 };
@@ -267,7 +267,7 @@ int main(int argc, char **argv)
 	}
 
 	// Load and verify BPF application
-	skel = cache_ext_mglru_lc_bpf__open();
+	skel = cache_ext_fifo_lc_bpf__open();
 	if (skel == NULL) {
 		perror("Failed to open BPF skeleton");
 		goto cleanup;
@@ -280,7 +280,7 @@ int main(int argc, char **argv)
 	printf("Watching directory: %s\n", watch_dir_full_path);
 
 	// Load BPF program
-	ret = cache_ext_mglru_lc_bpf__load(skel);
+	ret = cache_ext_fifo_lc_bpf__load(skel);
 	if (ret) {
 		perror("Failed to load BPF skeleton");
 		goto cleanup;
@@ -303,7 +303,7 @@ int main(int argc, char **argv)
 	printf("Successfully attached cache_ext_ops to %s\n", args.cgroup_path);
 
 	// Attach probes (including vfs_open fexit for directory watcher)
-	ret = cache_ext_mglru_lc_bpf__attach(skel);
+	ret = cache_ext_fifo_lc_bpf__attach(skel);
 	if (ret) {
 		perror("Failed to attach BPF probes");
 		goto cleanup;
@@ -362,7 +362,7 @@ cleanup:
 	cleanup_logs();
 	close(cgroup_fd);
 	bpf_link__destroy(link);
-	cache_ext_mglru_lc_bpf__destroy(skel);
+	cache_ext_fifo_lc_bpf__destroy(skel);
 
 	printf("\nFinal statistics:\n");
 	printf("  Access events:    %lu\n", access_count);

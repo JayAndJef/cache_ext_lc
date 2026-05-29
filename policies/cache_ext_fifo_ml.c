@@ -12,7 +12,7 @@
 #include <signal.h>
 #include <time.h>
 
-#include "cache_ext_mglru_ml.skel.h"
+#include "cache_ext_fifo_ml.skel.h"
 #include "dir_watcher.h"
 
 // For JSON parsing
@@ -21,7 +21,7 @@
 #define NUM_MODEL_FEATURES 9
 #define MAX_BINS 10
 
-char *USAGE = "Usage: ./cache_ext_mglru_ml --watch_dir <dir> --cgroup_path <path> --model_file <json> [--log_dir <dir>]\n";
+char *USAGE = "Usage: ./cache_ext_fifo_ml --watch_dir <dir> --cgroup_path <path> --model_file <json> [--log_dir <dir>]\n";
 struct cmdline_args {
 	char *watch_dir;
 	char *cgroup_path;
@@ -154,7 +154,7 @@ static void cleanup_logs()
 	}
 }
 
-static int load_model_weights(const char *model_file, struct cache_ext_mglru_ml_bpf *skel)
+static int load_model_weights(const char *model_file, struct cache_ext_fifo_ml_bpf *skel)
 {
 	FILE *fp = fopen(model_file, "r");
 	if (!fp) {
@@ -295,7 +295,7 @@ static int load_model_weights(const char *model_file, struct cache_ext_mglru_ml_
 int main(int argc, char **argv)
 {
 	int ret = 1;
-	struct cache_ext_mglru_ml_bpf *skel = NULL;
+	struct cache_ext_fifo_ml_bpf *skel = NULL;
 	struct bpf_link *link = NULL;
 	int cgroup_fd = -1;
 	libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
@@ -347,20 +347,20 @@ int main(int argc, char **argv)
 	}
 
 	// Open skel
-	skel = cache_ext_mglru_ml_bpf__open();
+	skel = cache_ext_fifo_ml_bpf__open();
 	if (skel == NULL) {
 		perror("Failed to open BPF skeleton");
 		goto cleanup;
 	}
 
-	printf("Starting cache_ext_mglru_ml (ML-enhanced MGLRU)\n");
+	printf("Starting cache_ext_fifo_ml (ML-enhanced MGLRU)\n");
 
 	// Set watch_dir
 	skel->rodata->watch_dir_path_len = strlen(watch_dir_full_path);
 	strcpy(skel->rodata->watch_dir_path, watch_dir_full_path);
 
 	// Load programs
-	ret = cache_ext_mglru_ml_bpf__load(skel);
+	ret = cache_ext_fifo_ml_bpf__load(skel);
 	if (ret) {
 		perror("Failed to load BPF skeleton");
 		goto cleanup;
@@ -417,7 +417,7 @@ int main(int argc, char **argv)
 	}
 
 	// Attach probes
-	ret = cache_ext_mglru_ml_bpf__attach(skel);
+	ret = cache_ext_fifo_ml_bpf__attach(skel);
 	if (ret) {
 		perror("Failed to attach BPF programs");
 		goto cleanup;
@@ -440,6 +440,6 @@ cleanup:
 	cleanup_logs();
 	close(cgroup_fd);
 	bpf_link__destroy(link);
-	cache_ext_mglru_ml_bpf__destroy(skel);
+	cache_ext_fifo_ml_bpf__destroy(skel);
 	return 0;
 }
