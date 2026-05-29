@@ -8,6 +8,12 @@ This repository contains the tracers and policies for LearnedCache. The develope
 
 This section is adapted from the [`cache_ext` repository](https://github.com/cache-ext/cache_ext).
 
+On cloud machines, `/mydata` is typically owned by root. Change ownership before cloning:
+
+```sh
+sudo chown -R $USER:$(id -gn) /mydata
+```
+
 First, clone the repo and
 initialize the submodules:
 

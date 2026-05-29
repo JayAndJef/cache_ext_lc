@@ -8,7 +8,7 @@ LearnedCache: eBPF page-cache eviction policies built on top of `cache_ext` (SOS
 
 ## Hard environmental requirement
 
-All policy builds and runs must happen on the custom `cache-ext` Linux kernel. Both `build_policies.sh` and the `lc-eval/*/run.sh` scripts hard-fail if `uname -r` does not contain `cache-ext`. First-time setup is `./setup.sh` — a two-phase script that installs the kernel, reboots, then runs all remaining install steps automatically (see README). To run individual steps manually, see the `install_*.sh` scripts. Submodules (`linux/`, `leveldb/`, `rocksdb/`, `My-YCSB/`) must be initialized via `git submodule update --init --recursive` — the kernel fork lives in `linux/`.
+All policy builds and runs must happen on the custom `cache-ext` Linux kernel. Both `build_policies.sh` and the `lc-eval/*/run.sh` scripts hard-fail if `uname -r` does not contain `cache-ext`. First-time setup is `./setup.sh` — a two-phase script that installs the kernel, reboots, then runs all remaining install steps automatically (see README). To run individual steps manually, see the `install_*.sh` scripts. Submodules (`linux/`, `leveldb/`, `rocksdb/`, `My-YCSB/`) must be initialized via `git submodule update --init --recursive` — the kernel fork lives in `linux/`. On cloud machines, `/mydata` is typically root-owned — run `sudo chown -R $USER:$(id -gn) /mydata` before cloning.
 
 ## Common commands
 
