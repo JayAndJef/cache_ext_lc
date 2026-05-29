@@ -87,8 +87,20 @@ class CacheExtPolicy:
     def stop(self):
         if not self.has_started:
             raise Exception("Policy not started")
-        cmd = ["sudo", "kill", "-2", str(self._policy_thread.pid)]
-        run(cmd)
+        # self._policy_thread.pid is the PID of the `sudo` wrapper, not the
+        # policy loader it exec'd (we are not root, so the loader is launched as
+        # `sudo <loader> ...`). sudo does not reliably forward SIGINT to its
+        # child in this non-interactive setup, so sending SIGINT to the wrapper
+        # leaves the loader spinning in its ring-buffer poll loop forever and
+        # communicate() blocks indefinitely. Signal the loader process(es)
+        # directly (the children of the sudo wrapper); the loader catches SIGINT,
+        # breaks its loop and flushes its logs, after which sudo also exits. We
+        # still signal the wrapper as a harmless fallback for root setups.
+        sudo_pid = self._policy_thread.pid
+        with suppress(subprocess.CalledProcessError):
+            run(["sudo", "pkill", "-INT", "-P", str(sudo_pid)])
+        with suppress(subprocess.CalledProcessError):
+            run(["sudo", "kill", "-2", str(sudo_pid)])
         out, err = self._policy_thread.communicate()
         with suppress(subprocess.CalledProcessError):
             run(["sudo", "rm", "/sys/fs/bpf/cache_ext/scan_pids"])

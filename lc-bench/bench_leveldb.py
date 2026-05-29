@@ -14,9 +14,34 @@ CLEANUP_TASKS = []
 
 
 def reset_database(db_dir: str, temp_db_dir: str):
-    if not db_dir.endswith("/"):
-        db_dir += "/"
-    run(["rsync", "-avpl", "--delete", db_dir, temp_db_dir])
+    # The artifact LevelDB database is ~109 GiB and this machine has well under
+    # 109 GiB free once the DB itself is on disk, so we cannot hold two full
+    # copies the way the upstream rsync approach does. LevelDB SST (.ldb) files
+    # are immutable: compaction writes brand-new files and unlinks old ones, it
+    # never rewrites an existing .ldb in place. So we hardlink every .ldb
+    # (near-zero extra space) and make real private copies of only the small
+    # mutable metadata (CURRENT, LOG, LOCK, MANIFEST-*, *.log). Every write the
+    # benchmark makes then lands on a private inode (new SSTs, the temp's own
+    # MANIFEST/WAL), and the pristine original is never modified. Hardlinks
+    # require the temp dir to be on the same filesystem as the DB (both /mydata).
+    db_dir = db_dir.rstrip("/")
+    temp_db_dir = temp_db_dir.rstrip("/")
+    script = (
+        'set -eu; '
+        'rm -rf "$TEMP"; '
+        # hardlink-clone the whole DB (fast, ~0 bytes copied)
+        'cp -al "$SRC" "$TEMP"; '
+        'cd "$TEMP"; '
+        # break the hardlink on every non-.ldb file by replacing it with a
+        # private real copy, so the benchmark's writes never reach the
+        # original's inode.
+        'find . -maxdepth 1 -type f ! -name "*.ldb" -print0 | '
+        'while IFS= read -r -d "" f; do rm -f "$f"; cp -p "$SRC/$f" "$f"; done'
+    )
+    run(
+        ["bash", "-c", script],
+        env={**os.environ, "SRC": db_dir, "TEMP": temp_db_dir},
+    )
 
 
 def parse_leveldb_bench_results(stdout: str) -> Dict:

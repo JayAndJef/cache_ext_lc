@@ -20,6 +20,54 @@ All policy builds and runs must happen on the custom `cache-ext` Linux kernel. B
 - **Parse tracer binary logs to CSV**: `policies/read_binary_logs.py`. The struct layouts at the top of that file (`FORMAT = '<QQQQQIIQQI4xQII'`) must stay in sync with `struct cache_access_fields` in both the `.bpf.c` and `.c` for each policy — if you change one, change all three.
 - **Run YCSB bench directly**: `python3 lc-bench/bench_leveldb.py --policy-loader policies/<policy>.out --leveldb-db <db> --bench-binary-dir My-YCSB/build --benchmark ycsb_a,... [--model-file <json>] [--cgroup-memory 10G]`. Pass `--model-file` only with `cache_ext_fifo_ml.out`.
 
+### Running the tracer for training data (resume notes)
+
+To collect `cache_ext_fifo_lc` training logs without the full 8-policy `run.sh`
+sweep, run the tracer alone via `bench_leveldb.py` — but `run.sh` is the only
+path that disables MGLRU, and **the eviction log stays 0 bytes while MGLRU is
+enabled** (cgroup reclaim takes the MGLRU path and never reaches cache_ext's
+`evict_folios`). So a manual direct run must wrap the bench with the mglru
+toggles:
+
+```bash
+sudo rm -rf /mydata/cache_ext_logs/*          # avoid mixing prior runs into training data
+utils/disable-mglru.sh                         # /sys/.../lru_gen/enabled -> 0x0000
+python3 lc-bench/bench_leveldb.py \
+    --cpu 8 --policy-loader policies/cache_ext_fifo_lc.out \
+    --results-file results/ycsb_results_tracer.json \
+    --leveldb-db /mydata/leveldb --bench-binary-dir My-YCSB/build \
+    --fadvise-hints "" --iterations 1 --cgroup-memory 10G \
+    --benchmark "ycsb_c,ycsb_b,ycsb_e"
+utils/enable-mglru.sh                          # restore default -> 0x0007
+```
+
+- **Workloads run so far:** `ycsb_c,ycsb_b,ycsb_e` (read/scan subset). Full set is
+  `ycsb_a,ycsb_b,ycsb_c,ycsb_d,ycsb_e,ycsb_f,uniform,uniform_read_write` — extend
+  by adding to `--benchmark` (skip workloads already collected to save disk).
+- **Disk budget:** ~1.6–2 GiB of logs per workload-iteration; `/mydata` had ~44
+  GiB free, so the full 8 workloads × 3 iters (~48 GiB) does NOT fit — use 1
+  iteration and/or a subset. Logs land in
+  `/mydata/cache_ext_logs/<benchmark>/iter_<N>/` (three `mglru_lc_{access,
+  insertion,eviction}_*.bin` per dir). Parse with `policies/read_binary_logs.py`.
+- These steps mirror what `lc-eval/ycsb/run.sh` does around its policy loop; the
+  full debugging history that made this work is in `SETUP_PHASE2_NOTES.md`.
+- **Baseline phase is wasted work for tracing — skip it next time.** Without
+  `--default-only`, `generate_configs` (`bench_leveldb.py:191-211`) pairs *two*
+  configs per workload: a `baseline_test` (plain-Linux, no `policy_loader`) and
+  the `cache_ext_test` (the tracer). The baseline produces **no** `.bin` trace
+  files — only throughput numbers in the results JSON we don't need for training
+  — so it just ~doubles wall-clock. There is no built-in "cache-ext-only" flag
+  (`--default-only` is the opposite, baseline-only). To collect traces faster,
+  add a small harness option (e.g. only emit `DEFAULT_CACHE_EXT_CGROUP` in the
+  `else` branch) so future tracer runs skip the baseline pass entirely.
+- **Temp DB lifecycle:** `reset_database` (`bench_leveldb.py:16`, called per-config
+  from `benchmark_prepare`) does `rm -rf "$TEMP"; cp -al ...` at the *start* of
+  every config, so `<db>_temp` is wiped/recreated before each workload and never
+  accumulates. Nothing deletes it at the *end* of a run — the last config's temp
+  lingers, but as a `cp -al` hardlink clone it costs only ~376 MB real (shared
+  `.ldb` inodes), not 109 GiB. Remove with `sudo rm -rf /mydata/leveldb_temp`
+  only if you want that back immediately; the next run resets it regardless.
+
 ## Policy code architecture
 
 Each policy is a pair of files in `policies/`:

@@ -15,6 +15,17 @@
 #include "cache_ext_fifo_lc.skel.h"
 #include "dir_watcher.h"
 
+/* Set from a signal handler to break out of the ring-buffer poll loop so the
+ * log files are flushed/closed cleanly. The benchmark harness stops the loader
+ * by sending SIGINT to this process. */
+static volatile sig_atomic_t exiting = 0;
+
+static void handle_exit_signal(int signo)
+{
+	(void)signo;
+	exiting = 1;
+}
+
 char *USAGE = "Usage: ./cache_ext_fifo_lc --watch_dir <dir> --cgroup_path <path> [--log_dir <dir>]\n";
 struct cmdline_args {
 	char *watch_dir;
@@ -335,8 +346,12 @@ int main(int argc, char **argv)
 	printf("MGLRU-LC policy loaded successfully\n");
 	printf("Press Ctrl+C to exit\n");
 
+	// Flush and close log files on SIGINT/SIGTERM instead of dying mid-poll.
+	signal(SIGINT, handle_exit_signal);
+	signal(SIGTERM, handle_exit_signal);
+
 	// Poll ring buffers
-	while (1) {
+	while (!exiting) {
 		ret = ring_buffer__poll(rb_access, 100);
 		if (ret < 0 && ret != -EINTR) {
 			fprintf(stderr, "Error polling access ring buffer: %d\n", ret);
