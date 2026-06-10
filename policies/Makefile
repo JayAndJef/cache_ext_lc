@@ -37,7 +37,7 @@ CLANG_BPF_SYS_INCLUDES ?= $(shell $(CLANG) -v -E - </dev/null 2>&1 \
 all: 	cache_ext_mru.out cache_ext_mglru.out cache_ext_fifo.out \
 		cache_ext_sampling.out cache_ext_get_scan.out cache_ext_s3fifo.out \
 		cache_ext_lhd.out cache_ext_fifo_lc.out \
-		cache_ext_fifo_ml.out cache_ext_fifo_ml_protect.out \
+		cache_ext_fifo_ml_protect.out \
 		# cache_ext_debug.out cache_ext_simple.out
 
 $(VMLINUX_H):
@@ -54,13 +54,7 @@ $(VMLINUX_H):
 %.out: %.c %.skel.h
 	$(CLANG) $(USERSPACE_CFLAGS) $< -o $@ $(USERSPACE_LINKER_FLAGS)
 
-# Special rules for ML policies (need json-c)
-cache_ext_mglru_ml.out: cache_ext_mglru_ml.c cache_ext_mglru_ml.skel.h
-	$(CLANG) $(USERSPACE_CFLAGS) $< -o $@ $(USERSPACE_ML_LINKER_FLAGS)
-
-cache_ext_fifo_ml.out: cache_ext_fifo_ml.c cache_ext_fifo_ml.skel.h
-	$(CLANG) $(USERSPACE_CFLAGS) $< -o $@ $(USERSPACE_ML_LINKER_FLAGS)
-
+# Special rule for the ML policy (needs json-c)
 cache_ext_fifo_ml_protect.out: cache_ext_fifo_ml_protect.c cache_ext_fifo_ml_protect.skel.h
 	$(CLANG) $(USERSPACE_CFLAGS) $< -o $@ $(USERSPACE_ML_LINKER_FLAGS)
 

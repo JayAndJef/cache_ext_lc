@@ -6,7 +6,7 @@ usage() {
 	echo "Usage: $0 <leveldb_db_path> [--model-file <path>] [--cgroup-memory <size>]"
 	echo ""
 	echo "  leveldb_db_path   path to the original (read-only) LevelDB database"
-	echo "  --model-file      path to model weights JSON; required to include cache_ext_fifo_ml"
+	echo "  --model-file      path to model weights JSON; required to include cache_ext_fifo_ml_protect"
 	echo "  --cgroup-memory   memory limit for cgroup (e.g. 4G, 10G). Default: 10G"
 	echo ""
 	echo "Example (tracer only):  $0 /mydata/leveldb"
@@ -76,7 +76,7 @@ POLICIES=(
 )
 
 if [ -n "$MODEL_FILE" ]; then
-	POLICIES+=("cache_ext_fifo_ml")
+	POLICIES+=("cache_ext_fifo_ml_protect")
 fi
 
 mkdir -p "$RESULTS_PATH"
@@ -98,7 +98,7 @@ for POLICY in "${POLICIES[@]}"; do
 	echo "Running policy: ${POLICY}"
 
 	POLICY_ARGS=()
-	if [ "$POLICY" = "cache_ext_fifo_ml" ]; then
+	if [ "$POLICY" = "cache_ext_fifo_ml_protect" ]; then
 		POLICY_ARGS=("--model-file" "$MODEL_FILE")
 	fi
 

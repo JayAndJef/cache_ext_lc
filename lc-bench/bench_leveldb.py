@@ -162,7 +162,7 @@ class LevelDBBenchmark(BenchmarkFramework):
             "--model-file",
             type=str,
             default=None,
-            help="Path to model weights JSON file (required for cache_ext_fifo_ml policy)",
+            help="Path to model weights JSON file (required for cache_ext_fifo_ml_protect policy)",
         )
         parser.add_argument(
             "--cgroup-memory",

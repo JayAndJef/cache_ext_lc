@@ -441,9 +441,13 @@ static s64 lfu_score_fn(struct cache_ext_list_node *node)
 	folio_key.ino = i_ino;
 	folio_key.offset = index;
 
+	// Untracked = never accessed since insertion (state is only created at
+	// folio_accessed) or lost to map LRU overflow -- the coldest candidates.
+	// Rank below any real frequency so they are evicted first; returning
+	// S64_MAX here would make readahead-only pages stick in the cache.
 	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
 	if (!page_state)
-		return S64_MAX;
+		return -1;
 
 	// Lower frequency = evict first
 	return (s64)page_state->frequency;

@@ -7,14 +7,14 @@ Runs YCSB workloads against LevelDB under all cache_ext policies, the FIFO-LC tr
 1. Running the custom `cache-ext` kernel (see repo root `install_kernel.sh`)
 2. Policies built: `./build_policies.sh` from the repo root
 3. A pre-populated LevelDB database at a known path (see `download_dbs.sh`)
-4. For the ML policy: a trained model weights JSON file (examples in `lc-eval/fifo-ml/example-models/`)
+4. For the ML policy: a trained model weights JSON file (train one with `python -m evict_classifier train` in the learnedcache repo)
 
 My-YCSB is built automatically by the script.
 
 ## Usage
 
 ```sh
-# Run all policies except fifo_ml (tracer data collection + comparison)
+# Run all policies except fifo_ml_protect (tracer data collection + comparison)
 lc-eval/ycsb/run.sh <leveldb_db_path>
 
 # Include the ML policy
@@ -35,7 +35,7 @@ lc-eval/ycsb/run.sh <leveldb_db_path> --model-file <model.json> --cgroup-memory 
 | `cache_ext_mru` | MRU |
 | `cache_ext_mglru` | cache_ext MGLRU implementation |
 | `cache_ext_fifo_lc` | FIFO-LC tracer (emits binary access logs to `/mydata/cache_ext_logs`) |
-| `cache_ext_fifo_ml` | FIFO-ML (requires `--model-file`) |
+| `cache_ext_fifo_ml_protect` | binary reuse classifier, skip-in-place (requires `--model-file`) |
 | baseline MGLRU | Linux built-in MGLRU, run with `--default-only` |
 
 ## Workloads
