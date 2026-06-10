@@ -345,66 +345,18 @@ static inline void track_folio_access(struct folio *folio) {
 	send_access_log(&fields);
 }
 
-static inline void track_folio_insertion(struct folio *folio) {
+// Insertion is LOGGED but mutates NO feature state: per_folio_map/per_file_map
+// are pure functions of the access stream, so the logged access features are
+// independent of insertion dynamics (readahead, evict/re-insert cycles). Must
+// stay semantically identical to cache_ext_fifo_ml_protect's state handling.
+static inline void log_folio_insertion(struct folio *folio) {
 	u32 s_dev = get_folio_dev(folio);
 	u64 i_ino = get_folio_ino(folio);
 	u64 index = folio->index;
 	u64 timestamp = bpf_ktime_get_ns();
 
-	struct tracer_page_key folio_key;
-	__builtin_memset(&folio_key, 0, sizeof(folio_key));
-	folio_key.dev = s_dev;
-	folio_key.ino = i_ino;
-	folio_key.offset = index;
-
 	if (s_dev == 0 || i_ino == 0)
 		return;
-
-	struct file_key fkey;
-	__builtin_memset(&fkey, 0, sizeof(fkey));
-	fkey.dev = s_dev;
-	fkey.ino = i_ino;
-
-	u64 file_size = get_folio_file_size(folio);
-
-	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
-	struct file_state *file_state = bpf_map_lookup_elem(&per_file_map, &fkey);
-
-	struct tracer_page_state new_page_state;
-	if (page_state) {
-		new_page_state.first_access_time = page_state->first_access_time;
-		new_page_state.prev_access_time = page_state->last_access_time;
-		new_page_state.frequency = page_state->frequency;
-		new_page_state.file_size = page_state->file_size;
-		new_page_state.last_access_delta = page_state->last_access_delta;
-		new_page_state.prev_access_delta = page_state->prev_access_delta;
-	} else {
-		new_page_state.first_access_time = timestamp;
-		new_page_state.prev_access_time = 0;
-		new_page_state.frequency = 0;
-		new_page_state.file_size = file_size;
-		new_page_state.last_access_delta = UNKNOWN_DELTA_NS;
-		new_page_state.prev_access_delta = UNKNOWN_DELTA_NS;
-	}
-	new_page_state.last_access_time = timestamp;
-	new_page_state.last_file_offset = index;
-
-	int ret = bpf_map_update_elem(&per_folio_map, &folio_key, &new_page_state, BPF_ANY);
-	if (ret < 0)
-		bpf_printk("per_folio_map write failed: %d", ret);
-
-	struct file_state new_file_state = {
-		.last_index = index,
-		.last_offset = file_state ? file_state->last_offset : UNKNOWN_OFFSET_DELTA,
-		.prev_access_time = file_state ? file_state->last_access_time : 0,
-		.last_access_time = timestamp,
-		.last_access_delta = file_state ? file_state->last_access_delta : UNKNOWN_DELTA_NS,
-		.prev_access_delta = file_state ? file_state->prev_access_delta : UNKNOWN_DELTA_NS,
-		.hotness_ema = file_state ? file_state->hotness_ema : 0,
-	};
-	ret = bpf_map_update_elem(&per_file_map, &fkey, &new_file_state, BPF_ANY);
-	if (ret < 0)
-		bpf_printk("per_file_map write failed: %d", ret);
 
 	struct cache_insertion_event event = {
 		.timestamp = timestamp,
@@ -437,7 +389,7 @@ void BPF_STRUCT_OPS(mglru_lc_folio_added, struct folio *folio)
 	if (!is_folio_relevant(folio))
 		return;
 
-	track_folio_insertion(folio);
+	log_folio_insertion(folio);
 
 	int ret = bpf_cache_ext_list_add_tail(sampling_list, folio);
 	if (ret != 0) {
@@ -454,25 +406,11 @@ void BPF_STRUCT_OPS(mglru_lc_folio_accessed, struct folio *folio)
 	track_folio_access(folio);
 }
 
+// Eviction mutates NO feature state: access history persists across evictions
+// (matching cache_ext_fifo_ml_protect), so logged features after re-insertion
+// reflect the page's real access gaps, not a policy-dependent reset.
 void BPF_STRUCT_OPS(mglru_lc_folio_evicted, struct folio *folio)
 {
-	if (!is_folio_relevant(folio))
-		return;
-
-	u32 s_dev = get_folio_dev(folio);
-	u64 i_ino = get_folio_ino(folio);
-	u64 index = folio->index;
-
-	if (s_dev == 0 || i_ino == 0)
-		return;
-
-	struct tracer_page_key folio_key;
-	__builtin_memset(&folio_key, 0, sizeof(folio_key));
-	folio_key.dev = s_dev;
-	folio_key.ino = i_ino;
-	folio_key.offset = index;
-
-	bpf_map_delete_elem(&per_folio_map, &folio_key);
 }
 
 // Simple LFU scoring function
