@@ -170,6 +170,14 @@ class LevelDBBenchmark(BenchmarkFramework):
             default=None,
             help="Memory limit for the cache_ext cgroup (e.g. 4G, 10G). Defaults to 10G for LevelDB workloads.",
         )
+        parser.add_argument(
+            "--cache-ext-only",
+            action="store_true",
+            default=False,
+            help="Run only the cache_ext config, skipping the baseline pass. Mirror of "
+            "--default-only; useful for tracer data collection where the baseline "
+            "produces no trace logs and just doubles wall-clock.",
+        )
 
     def generate_configs(self, configs: List[Dict]) -> List[Dict]:
         configs = add_config_option("enable_mmap", [False], configs)
@@ -187,6 +195,10 @@ class LevelDBBenchmark(BenchmarkFramework):
         if self.args.default_only:
             configs = add_config_option(
                 "cgroup_name", [DEFAULT_BASELINE_CGROUP], configs
+            )
+        elif self.args.cache_ext_only:
+            configs = add_config_option(
+                "cgroup_name", [DEFAULT_CACHE_EXT_CGROUP], configs
             )
         else:
             configs = add_config_option(
