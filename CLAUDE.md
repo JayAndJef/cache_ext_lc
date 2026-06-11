@@ -79,23 +79,23 @@ The Makefile pipeline is: `clang -target bpf` produces `<name>.bpf.o`, `bpftool 
 
 The LearnedCache policies share infrastructure with the upstream policies (mglru, lhd, mru, s3fifo, sampling, get_scan) — when changing shared helpers in `cache_ext_lib.bpf.h` or `dir_watcher.*`, verify all `.bpf.c` files still build.
 
-### How `bpf_cache_ext_list_sample` actually works (read before designing a score_fn)
+### Kernel list-eviction kfuncs (read before designing an evict callback)
 
-From `linux/mm/cache_ext_ds.c` (`__bpf_cache_ext_list_sample`) — these semantics are non-obvious and shape policy design:
+From `linux/mm/cache_ext_ds.c` — these semantics are non-obvious and shape policy design:
 
-- Folios are popped from the **front** of the list (oldest first), `request_nr_folios_to_evict × sample_size` of them; after selection, **all** sampled nodes are put back at the **tail**. Any FIFO-list policy using this kfunc is therefore really a CLOCK-style rotation: survivors get a full trip through the list before being reconsidered.
-- The **minimum-score folio of each consecutive `sample_size` group** is selected — there is no global ordering across groups. A "protected" (high-score) folio is evicted only when its entire group is high-score: protection is probabilistic (≈ p^sample_size at protect-rate p), and forward progress is structural (each group always yields exactly one victim).
-- `S64_MAX` is **not** a skip sentinel: if a whole group returns `S64_MAX` (all dirty/locked), one folio is still selected — the kernel reclaim path re-validates downstream. All policies use `S64_MAX` for "unevictable" anyway; just know it's best-effort.
-- Negative scores are fine (`s64` comparisons throughout).
+- `bpf_cache_ext_list_iterate_extended` (what `fifo_ml_protect` uses): walks the list **head-first** (oldest first), calling the callback per node; the callback returns `CACHE_EXT_EVICT_NODE` / `CACHE_EXT_SKIP_NODE` / `CACHE_EXT_CONTINUE_ITER` / `CACHE_EXT_STOP_ITER`, and `cache_ext_iterate_opts` says where each class of node moves (e.g. skip → tail = rotate in place). A scan is capped at **4096 nodes** (`max_iter`) and **32 victims** (the eviction ctx array); the callback cannot see the eviction ctx, so any stop-at-quota condition must live in policy globals (see the s3fifo multi-pass pattern).
+- `bpf_cache_ext_list_sample` (used by the upstream sampling policies): pops `request_nr × sample_size` folios from the front, selects the **min-score of each consecutive `sample_size` group** (no global ordering), puts all sampled nodes back at the tail. `S64_MAX` is not a skip sentinel — a whole-`S64_MAX` group still yields a victim (reclaim re-validates downstream). Negative scores are fine.
 
 ### cache_ext_fifo_ml_protect (binary reuse classifier, skip-in-place)
 
-Single FIFO list; no model at insertion. At eviction, `protect_score_fn` computes the classifier logit (`sum(weights_int[bin(feature)]) + bias` over the 9 eviction-time features via `discretize_feature`) and shapes the score:
+Single FIFO list; no model at insertion. Eviction is a head-first scan via `bpf_cache_ext_list_iterate_extended` — no oversampling; the scan stops as soon as `request_nr_folios_to_evict` victims are gathered (`evict_target`/`evict_count` globals, since the callback can't see the ctx):
 
-- not evictable (dirty/locked/etc.) → `S64_MAX`
-- predicted reused (`logit > threshold`) → `PROTECT_BASE + tie` (protected; rotates to tail)
-- predicted not reused → `tie`, where `tie = -min(time_since_access, TSA_CAP)` so the stalest folio in a group is evicted first
-- untracked (never accessed since insertion — state is created only at `folio_accessed` — or lost to per_folio_map LRU overflow) → `-TSA_CAP` (evict first; the model never scores pages without access history)
+- not evictable (dirty/locked/etc.) → `CONTINUE` (rotated to the tail like everything else scanned)
+- predicted reused (`logit + bias > threshold` via `compute_feature_score`/`discretize_feature`) → `SKIP` (rotated to the tail — CLOCK-style second chance)
+- predicted not reused → `EVICT` (head-first order = stalest-in-rotation first; no score shaping or TSA tiebreak needed)
+- untracked (never accessed since insertion — state is created only at `folio_accessed` — or lost to per_folio_map LRU overflow) → never protected, so evicted on first encounter (the model never scores pages without access history)
+
+If pass 1 exhausts its 4096-node scan budget before filling the quota (nearly everything predicted-reused), a **fallback pass** evicts head-first ignoring the model, so reclaim always makes progress.
 
 `bias_int`/`threshold_int` come from the model JSON (top-level fields the classifier exporter adds; the loader puts them in `model_meta_map[0]`). Models are trained by `learnedcache/evict_classifier` (`python -m evict_classifier train`); see `learnedcache/evict_classifier/KNOWN_ISSUES.md` for documented train/serve feature skews (inode-level features are read at eviction time but were trained as-of the page's last access).
 

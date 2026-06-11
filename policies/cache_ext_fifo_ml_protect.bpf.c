@@ -11,13 +11,13 @@ char _license[] SEC("license") = "GPL";
 #define UNKNOWN_DELTA_NS 0xffffffffffffffffULL
 #define UNKNOWN_OFFSET_DELTA 0xffffffffU
 
-// Skip-in-place protection: at eviction the binary classifier scores each
-// sampled folio. Predicted-reused folios get PROTECT_BASE added so the sampler
-// (which evicts the LOWEST scores) only touches them once predicted-not-reused
-// folios are exhausted. Within either group, a recency tiebreak makes the
-// stalest folio (largest time-since-access) go first -> forward progress.
-#define PROTECT_BASE (1LL << 40)
-#define TSA_CAP (1ULL << 36)
+// Skip-in-place protection: eviction scans the FIFO list head-first (oldest
+// first) and classifies each folio. Predicted-reused folios are rotated to
+// the list tail (a second chance -- CLOCK-style); everything else evictable
+// is evicted, until exactly the requested number of victims is gathered. If
+// the scan cannot gather enough (nearly everything protected/unevictable), a
+// fallback pass evicts head-first ignoring the model so reclaim always makes
+// progress. No oversampling: the scan stops as soon as the quota is met.
 
 #define DEBUG
 #ifdef DEBUG
@@ -324,11 +324,8 @@ static inline __u8 discretize_feature(__u64 value, __u64 *bin_edges, __u8 n_bins
 }
 
 // Sum of per-bin weights over the 9 eviction-time features (the model logit
-// before bias). Returns S64_MAX if the folio has no tracked state yet. Also
-// outputs the time-since-last-access (the TSA feature, reused as the eviction
-// recency tiebreak) so the caller needs only this one pass over the maps.
-static inline s64 compute_feature_score(struct folio *folio, u64 *tsa_out) {
-	*tsa_out = 0;
+// before bias). Returns S64_MAX if the folio has no tracked state yet.
+static inline s64 compute_feature_score(struct folio *folio) {
 	u32 s_dev = get_folio_dev(folio);
 	u64 i_ino = get_folio_ino(folio);
 	u64 index = folio->index;
@@ -350,16 +347,12 @@ static inline s64 compute_feature_score(struct folio *folio, u64 *tsa_out) {
 	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
 	struct file_state *file_state = bpf_map_lookup_elem(&per_file_map, &fkey);
 
-	// Time-since-access depends only on the page state; compute it (for the TSA
-	// feature and the caller's tiebreak) before the file-state guard.
-	if (page_state) {
-		u64 now = bpf_ktime_get_ns();
-		*tsa_out = now >= page_state->last_access_time ?
-			now - page_state->last_access_time : 0;
-	}
-
 	if (!page_state || !file_state)
 		return S64_MAX;
+
+	u64 now = bpf_ktime_get_ns();
+	u64 tsa = now >= page_state->last_access_time ?
+		now - page_state->last_access_time : 0;
 
 	u64 raw_features[NUM_MODEL_FEATURES];
 	raw_features[PD] = page_state->last_access_delta;
@@ -370,7 +363,7 @@ static inline s64 compute_feature_score(struct folio *folio, u64 *tsa_out) {
 	raw_features[ID] = file_state->last_access_delta;
 	raw_features[ID2] = file_state->prev_access_delta;
 	raw_features[IE] = file_state->hotness_ema;
-	raw_features[TSA] = *tsa_out;
+	raw_features[TSA] = tsa;
 
 	s64 score = 0;
 
@@ -453,45 +446,77 @@ void BPF_STRUCT_OPS(protect_folio_evicted, struct folio *folio)
 {
 }
 
-// Skip-in-place score: protect predicted-reused folios, evict the rest,
-// stalest-first within each group so eviction always makes progress.
-static s64 protect_score_fn(struct cache_ext_list_node *node)
+// The iterate callback cannot see the eviction ctx, so the "stop once we have
+// enough victims" quota lives in these globals, reset at the top of each
+// protect_evict_folios call. The kernel serializes the iteration itself under
+// the registry write-lock; a concurrent reclaimer racing on the reset can at
+// worst end a scan a few folios early or late, which reclaim tolerates.
+static u64 evict_target;
+static u64 evict_count;
+
+static inline bool folio_evictable_now(struct folio *folio)
 {
-	if (!node || !node->folio)
-		return S64_MAX;
+	if (!folio_test_uptodate(folio) || !folio_test_lru(folio))
+		return false;
+	if (folio_test_dirty(folio) || folio_test_writeback(folio))
+		return false;
+	if (folio_test_locked(folio))
+		return false;
+	return true;
+}
 
-	// Folios the kernel cannot evict right now are never selected.
-	if (!folio_test_uptodate(node->folio) || !folio_test_lru(node->folio))
-		return S64_MAX;
-	if (folio_test_dirty(node->folio) || folio_test_writeback(node->folio))
-		return S64_MAX;
-	if (folio_test_locked(node->folio))
-		return S64_MAX;
-
-	// One pass over the maps yields both the model logit and the recency
-	// tiebreak (time-since-access). Larger tsa -> lower score -> evicted first.
-	u64 tsa = 0;
-	s64 raw = compute_feature_score(node->folio, &tsa);
-	if (tsa > TSA_CAP)
-		tsa = TSA_CAP;
-	s64 tie = -(s64)tsa;
+static inline bool model_predicts_reuse(struct folio *folio)
+{
+	s64 raw = compute_feature_score(folio);
 
 	// Untracked folios have no per_folio_map entry: either never accessed
 	// since insertion (state is only created at folio_accessed -- typically
 	// readahead overshoot) or long-idle and forgotten via LRU map overflow.
-	// Both are prime eviction candidates: rank with the stalest (evict first).
-	// The model only ever scores pages with real access history.
+	// Both are prime eviction candidates; the model only ever scores pages
+	// with real access history.
 	if (raw == S64_MAX)
-		return -(s64)TSA_CAP;
+		return false;
 
 	u32 zero = 0;
 	struct model_meta *meta = bpf_map_lookup_elem(&model_meta_map, &zero);
 	s64 bias = meta ? meta->bias : 0;
 	s64 threshold = meta ? meta->threshold : 0;
+	return raw + bias > threshold;
+}
 
-	if (raw + bias > threshold)
-		return PROTECT_BASE + tie; // predicted reused -> protect
-	return tie;                        // predicted not reused -> evict
+// Pass 1: head-first scan. Predicted-reused folios are SKIPped (rotated to
+// the tail by skip_mode); everything else evictable is evicted until the
+// quota is met. Unevictable folios CONTINUE (also rotated -- they get a full
+// list trip, same as the old sampler's put-back-at-tail).
+static int protect_iter_fn(int idx, struct cache_ext_list_node *node)
+{
+	if (evict_count >= evict_target)
+		return CACHE_EXT_STOP_ITER;
+	if (!node || !node->folio)
+		return CACHE_EXT_CONTINUE_ITER;
+	if (!folio_evictable_now(node->folio))
+		return CACHE_EXT_CONTINUE_ITER;
+	if (model_predicts_reuse(node->folio))
+		return CACHE_EXT_SKIP_NODE;
+
+	evict_count++;
+	return CACHE_EXT_EVICT_NODE;
+}
+
+// Pass 2 (forward progress): evict head-first, ignoring the model. Only runs
+// when pass 1 ran out of scan budget before filling the quota (nearly every
+// candidate predicted-reused or unevictable).
+static int protect_fallback_iter_fn(int idx, struct cache_ext_list_node *node)
+{
+	if (evict_count >= evict_target)
+		return CACHE_EXT_STOP_ITER;
+	if (!node || !node->folio)
+		return CACHE_EXT_CONTINUE_ITER;
+	if (!folio_evictable_now(node->folio))
+		return CACHE_EXT_CONTINUE_ITER;
+
+	evict_count++;
+	return CACHE_EXT_EVICT_NODE;
 }
 
 void BPF_STRUCT_OPS(protect_evict_folios,
@@ -501,19 +526,43 @@ void BPF_STRUCT_OPS(protect_evict_folios,
 	u64 start_time = bpf_ktime_get_ns();
 	dbg_printk("cache_ext: protect_evict_folios\n");
 
-	// Oversample by 5x to get better candidates.
-	struct sampling_options sampling_opts = {
-		.sample_size = 5,
+	evict_target = eviction_ctx->request_nr_folios_to_evict;
+	evict_count = 0;
+
+	// Everything scanned moves to the tail: victims (their list nodes are
+	// freed by the kernel on actual removal), protected folios (the skip
+	// rotation), and unevictable folios alike -- a CLOCK-style rotation.
+	struct cache_ext_iterate_opts opts = {
+		.continue_list = CACHE_EXT_ITERATE_SELF,
+		.continue_mode = CACHE_EXT_ITERATE_TAIL,
+		.evict_list = CACHE_EXT_ITERATE_SELF,
+		.evict_mode = CACHE_EXT_ITERATE_TAIL,
+		.skip_list = CACHE_EXT_ITERATE_SELF,
+		.skip_mode = CACHE_EXT_ITERATE_TAIL,
 	};
 
-	bpf_cache_ext_list_sample(memcg, sampling_list, protect_score_fn,
-				  &sampling_opts, eviction_ctx);
+	if (bpf_cache_ext_list_iterate_extended(memcg, sampling_list,
+						protect_iter_fn, &opts,
+						eviction_ctx) < 0) {
+		bpf_printk("cache_ext: protect: failed to iterate list\n");
+		return;
+	}
+
+	if (eviction_ctx->nr_folios_to_evict <
+	    eviction_ctx->request_nr_folios_to_evict) {
+		if (bpf_cache_ext_list_iterate_extended(memcg, sampling_list,
+							protect_fallback_iter_fn,
+							&opts, eviction_ctx) < 0)
+			bpf_printk("cache_ext: protect: fallback iterate failed\n");
+	}
 
 	u64 end_time = bpf_ktime_get_ns();
-	dbg_printk("cache_ext: Evicted %d/%d pages in %llu ns\n",
+	dbg_printk("cache_ext: Evicted %lu/%lu pages in %llu ns\n",
 		   eviction_ctx->nr_folios_to_evict,
 		   eviction_ctx->request_nr_folios_to_evict,
 		   end_time - start_time);
+	dbg_printk("cache_ext: protected %llu folios this scan\n",
+		   opts.nr_folios_skip);
 }
 
 SEC(".struct_ops.link")
