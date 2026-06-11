@@ -31,3 +31,6 @@ echo "Building YCSB..."
 mkdir -p build
 cd build
 cmake ..
+
+# Only the LevelDB driver is needed for LearnedCache benchmarks
+make -j run_leveldb init_leveldb
