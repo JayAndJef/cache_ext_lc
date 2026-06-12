@@ -98,6 +98,7 @@ static int iterate_mru(int idx, struct cache_ext_list_node *node)
 void BPF_STRUCT_OPS(mru_evict_folios, struct cache_ext_eviction_ctx *eviction_ctx,
 	       struct mem_cgroup *memcg)
 {
+	u64 lat_start = bpf_ktime_get_ns();
 	dbg_printk("cache_ext: Hi from the mru_evict_folios hook! :D\n");
 	int ret = bpf_cache_ext_list_iterate(memcg, mru_list, iterate_mru,
 					     eviction_ctx);
@@ -110,6 +111,7 @@ void BPF_STRUCT_OPS(mru_evict_folios, struct cache_ext_eviction_ctx *eviction_ct
 			   eviction_ctx->request_nr_folios_to_evict,
 			   eviction_ctx->nr_folios_to_evict);
 	}
+	bpf_printk("evict_lat_ns=%llu", bpf_ktime_get_ns() - lat_start);
 }
 
 SEC(".struct_ops.link")

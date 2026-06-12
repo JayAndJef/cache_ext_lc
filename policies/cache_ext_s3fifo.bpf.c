@@ -273,12 +273,14 @@ static void evict_small(struct cache_ext_eviction_ctx *eviction_ctx, struct mem_
 void BPF_STRUCT_OPS(s3fifo_evict_folios, struct cache_ext_eviction_ctx *eviction_ctx,
 		    struct mem_cgroup *memcg)
 {
+	u64 lat_start = bpf_ktime_get_ns();
 	// bpf_printk("cache_ext: evict_folios: main_list_size: %lld, small_list_size: %lld, cache_size: %lld\n",
 	// 	   main_list_size, small_list_size, cache_size);
 	if (small_list_size >= cache_size / 15 || main_list_size <= 2 * small_list_size)
 		evict_small(eviction_ctx, memcg);
 	else
 		evict_main_iter(eviction_ctx, memcg);
+	bpf_printk("evict_lat_ns=%llu", bpf_ktime_get_ns() - lat_start);
 }
 
 void BPF_STRUCT_OPS(s3fifo_folio_accessed, struct folio *folio) {

@@ -172,6 +172,13 @@ class LevelDBBenchmark(BenchmarkFramework):
             help="Memory limit for the cache_ext cgroup (e.g. 4G, 10G). Defaults to 10G for LevelDB workloads.",
         )
         parser.add_argument(
+            "--runtime-seconds",
+            type=int,
+            default=240,
+            help="Timed benchmark duration per config (default: 240). Short runs "
+            "are useful for overhead measurements (e.g. eviction latency).",
+        )
+        parser.add_argument(
             "--policy-extra-args",
             type=str,
             default="",
@@ -189,7 +196,7 @@ class LevelDBBenchmark(BenchmarkFramework):
 
     def generate_configs(self, configs: List[Dict]) -> List[Dict]:
         configs = add_config_option("enable_mmap", [False], configs)
-        configs = add_config_option("runtime_seconds", [240], configs)
+        configs = add_config_option("runtime_seconds", [self.args.runtime_seconds], configs)
         configs = add_config_option("warmup_runtime_seconds", [45], configs)
         configs = add_config_option(
             "benchmark", parse_strings_string(self.args.benchmark), configs

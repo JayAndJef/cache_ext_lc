@@ -19,7 +19,7 @@ char _license[] SEC("license") = "GPL";
 // fallback pass evicts head-first ignoring the model so reclaim always makes
 // progress. No oversampling: the scan stops as soon as the quota is met.
 
-#define DEBUG
+// #define DEBUG
 #ifdef DEBUG
 #define dbg_printk(fmt, ...) bpf_printk(fmt, ##__VA_ARGS__)
 #else
@@ -545,6 +545,7 @@ void BPF_STRUCT_OPS(protect_evict_folios,
 						protect_iter_fn, &opts,
 						eviction_ctx) < 0) {
 		bpf_printk("cache_ext: protect: failed to iterate list\n");
+		bpf_printk("evict_lat_ns=%llu", bpf_ktime_get_ns() - start_time);
 		return;
 	}
 
@@ -563,6 +564,7 @@ void BPF_STRUCT_OPS(protect_evict_folios,
 		   end_time - start_time);
 	dbg_printk("cache_ext: protected %llu folios this scan\n",
 		   opts.nr_folios_skip);
+	bpf_printk("evict_lat_ns=%llu", end_time - start_time);
 }
 
 SEC(".struct_ops.link")

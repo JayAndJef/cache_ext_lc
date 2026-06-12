@@ -323,12 +323,14 @@ static s64 bpf_lhd_score_fn(struct cache_ext_list_node *a) {
 void BPF_STRUCT_OPS(lhd_evict_folios, struct cache_ext_eviction_ctx *eviction_ctx,
 	       struct mem_cgroup *memcg)
 {
+	u64 lat_start = bpf_ktime_get_ns();
 	struct sampling_options opts = {
 		.sample_size = 16,
 	};
 
 	if (bpf_cache_ext_list_sample(memcg, lhd_list, bpf_lhd_score_fn, &opts, eviction_ctx)) {
 		bpf_printk("cache_ext: evict: Failed to sample\n");
+		bpf_printk("evict_lat_ns=%llu", bpf_ktime_get_ns() - lat_start);
 		return;
 	}
 
@@ -365,6 +367,7 @@ void BPF_STRUCT_OPS(lhd_evict_folios, struct cache_ext_eviction_ctx *eviction_ct
 			}
 		}
 	}*/
+	bpf_printk("evict_lat_ns=%llu", bpf_ktime_get_ns() - lat_start);
 }
 
 void BPF_STRUCT_OPS(lhd_folio_accessed, struct folio *folio) {

@@ -244,6 +244,7 @@ void BPF_STRUCT_OPS(sampling_evict_folios,
 		    struct cache_ext_eviction_ctx *eviction_ctx,
 		    struct mem_cgroup *memcg)
 {
+	u64 lat_start = bpf_ktime_get_ns();
 	dbg_printk(
 		"cache_ext: Hi from the sampling_evict_folios hook! :D\n");
 
@@ -252,6 +253,7 @@ void BPF_STRUCT_OPS(sampling_evict_folios,
 	};
 	bpf_cache_ext_list_sample(memcg, sampling_list, bpf_lfu_score_fn,
 				  &sampling_opts, eviction_ctx);
+	bpf_printk("evict_lat_ns=%llu", bpf_ktime_get_ns() - lat_start);
 	dbg_printk("cache_ext: Evicting %d pages (%d requested)\n",
 			   eviction_ctx->nr_folios_to_evict,
 			   eviction_ctx->request_nr_folios_to_evict);

@@ -489,6 +489,7 @@ void BPF_STRUCT_OPS(ml_sampling_evict_folios,
 		    struct cache_ext_eviction_ctx *eviction_ctx,
 		    struct mem_cgroup *memcg)
 {
+	u64 lat_start = bpf_ktime_get_ns();
 	dbg_printk("cache_ext: ml_sampling_evict_folios\n");
 
 	struct sampling_options sampling_opts = {
@@ -500,6 +501,7 @@ void BPF_STRUCT_OPS(ml_sampling_evict_folios,
 	dbg_printk("cache_ext: ml_sampling evicted %lu/%lu pages\n",
 		   eviction_ctx->nr_folios_to_evict,
 		   eviction_ctx->request_nr_folios_to_evict);
+	bpf_printk("evict_lat_ns=%llu", bpf_ktime_get_ns() - lat_start);
 }
 
 SEC(".struct_ops.link")
