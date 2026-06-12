@@ -221,6 +221,9 @@ int main(int argc, char **argv)
 	struct cache_ext_fifo_ml_protect_bpf *skel = NULL;
 	struct bpf_link *link = NULL;
 	int cgroup_fd = -1;
+	/* stdout is redirected to a log file by the bench harness; line-buffer it
+	 * so startup/progress lines survive the SIGINT kill at teardown. */
+	setvbuf(stdout, NULL, _IOLBF, 0);
 	libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
 	struct cmdline_args args = { 0 };
@@ -297,7 +300,11 @@ int main(int argc, char **argv)
 	}
 
 	printf("Successfully attached. Press Ctrl-C to exit.\n");
-	getchar();
+	/* getchar() returns EOF immediately when stdin is /dev/null (nohup),
+	 * which would silently detach the policy mid-benchmark. Sleep until a
+	 * signal terminates us instead. */
+	for (;;)
+		pause();
 
 cleanup:
 	close(cgroup_fd);

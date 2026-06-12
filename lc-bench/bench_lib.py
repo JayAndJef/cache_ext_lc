@@ -82,8 +82,15 @@ class CacheExtPolicy:
         loader_log_dir = log_dir if log_dir else "/tmp"
         self._loader_log_path = os.path.join(loader_log_dir, "loader.log")
         self._loader_log_file = open(self._loader_log_path, "w")
+        # stdin=PIPE (held open, never written) keeps loaders alive that use a
+        # getchar()-style "press any key" keep-alive: with inherited stdin
+        # under nohup they read EOF from /dev/null and exit immediately,
+        # silently detaching the policy.
         self._policy_thread = subprocess.Popen(
-            cmd, stdout=self._loader_log_file, stderr=subprocess.STDOUT
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=self._loader_log_file,
+            stderr=subprocess.STDOUT,
         )
         sleep(10)
 
