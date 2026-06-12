@@ -21,12 +21,13 @@
 #define MAX_BINS 10
 
 char *USAGE =
-	"Usage: ./cache_ext_ml_sampling --watch_dir <dir> --cgroup_path <path> --model_file <json>\n";
+	"Usage: ./cache_ext_ml_sampling --watch_dir <dir> --cgroup_path <path> --model_file <json> [--sample_size <n>]\n";
 
 struct cmdline_args {
 	char *watch_dir;
 	char *cgroup_path;
 	char *model_file;
+	int sample_size;
 };
 
 // Must match struct model_meta in cache_ext_ml_sampling.bpf.c.
@@ -40,6 +41,8 @@ static struct argp_option options[] = {
 	{ "cgroup_path", 'c', "PATH", 0,
 	  "Path to cgroup (e.g., /sys/fs/cgroup/cache_ext_test)" },
 	{ "model_file", 'm', "FILE", 0, "Path to model weights JSON file" },
+	{ "sample_size", 's', "N", 0,
+	  "Eviction oversampling factor (default: 20, matching sampled-LFU)" },
 	{ 0 }
 };
 
@@ -55,6 +58,9 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		break;
 	case 'm':
 		args->model_file = arg;
+		break;
+	case 's':
+		args->sample_size = atoi(arg);
 		break;
 	default:
 		return ARGP_ERR_UNKNOWN;
@@ -268,6 +274,16 @@ int main(int argc, char **argv)
 
 	skel->rodata->watch_dir_path_len = strlen(watch_dir_full_path);
 	strcpy(skel->rodata->watch_dir_path, watch_dir_full_path);
+
+	if (args.sample_size != 0) {
+		if (args.sample_size < 1 || args.sample_size > 100) {
+			fprintf(stderr, "Invalid --sample_size %d (expected 1-100)\n",
+				args.sample_size);
+			goto cleanup;
+		}
+		skel->rodata->sample_size = (unsigned int)args.sample_size;
+	}
+	printf("Sampling factor: %u\n", skel->rodata->sample_size);
 
 	ret = cache_ext_ml_sampling_bpf__load(skel);
 	if (ret) {

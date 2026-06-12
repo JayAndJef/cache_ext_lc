@@ -18,7 +18,9 @@ import os
 
 BASE = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-# (label, source, loader-or-None) in figure bar order
+# (label, source, loader-or-None) in figure bar order. source selects the
+# results file: "policies"/"ml30" share config shapes (sample_size is compiled
+# in, not recorded), so variant runs live in separate files.
 BARS = [
     ("MGLRU (Linux)", "mglru", None),
     ("MRU (cache_ext)", "policies", "cache_ext_mru.out"),
@@ -27,11 +29,14 @@ BARS = [
     ("LHD (cache_ext)", "policies", "cache_ext_lhd.out"),
     ("LFU (cache_ext)", "policies", "cache_ext_sampling.out"),
     ("ML-protect (ours)", "policies", "cache_ext_fifo_ml_protect.out"),
-    ("ML-rank (ours)", "policies", "cache_ext_ml_sampling.out"),
+    ("ML-rank 10x (ours)", "ml10", "cache_ext_ml_sampling.out"),
+    ("ML-rank 20x (ours)", "policies", "cache_ext_ml_sampling.out"),
+    ("ML-rank 30x (ours)", "ml30", "cache_ext_ml_sampling.out"),
+    ("ML-rank 40x (ours)", "ml40", "cache_ext_ml_sampling.out"),
 ]
 WORKLOADS = ["ycsb_a", "ycsb_b", "ycsb_c", "ycsb_d", "ycsb_e", "ycsb_f"]
-# Both ML variants are excluded from "best non-ML" normalization.
-ML_LABELS = ("ML-protect (ours)", "ML-rank (ours)")
+# All ML variants are excluded from "best non-ML" normalization.
+ML_LABELS = tuple(label for label, _, _ in BARS if "(ours)" in label)
 
 
 def latency_p99(results):
@@ -49,18 +54,23 @@ def load(path):
         return json.load(f)
 
 
-def collect(results_path, mglru_path):
-    """-> {workload: {label: {"tput": float, "p99_ms": float}}}"""
+def collect(results_path, mglru_path, variant_paths=None):
+    """-> {workload: {label: {"tput": float, "p99_ms": float}}}
+    variant_paths: {source_name: path} for sample-size variant files."""
     data = {w: {} for w in WORKLOADS}
-    for e in load(results_path):
-        cfg, res = e["config"], e["results"]
-        w = cfg.get("benchmark")
-        if w not in data or cfg.get("cgroup_name") != "cache_ext_test":
-            continue
-        for label, src, loader in BARS:
-            if src == "policies" and cfg.get("policy_loader") == loader:
-                data[w][label] = {"tput": res.get("throughput_avg"),
-                                  "p99_ms": latency_p99(res) / 1e6}
+    sources = {"policies": load(results_path)}
+    for src_name, path in (variant_paths or {}).items():
+        sources[src_name] = load(path)
+    for src_name, entries in sources.items():
+        for e in entries:
+            cfg, res = e["config"], e["results"]
+            w = cfg.get("benchmark")
+            if w not in data or cfg.get("cgroup_name") != "cache_ext_test":
+                continue
+            for label, src, loader in BARS:
+                if src == src_name and cfg.get("policy_loader") == loader:
+                    data[w][label] = {"tput": res.get("throughput_avg"),
+                                      "p99_ms": latency_p99(res) / 1e6}
     for e in load(mglru_path):
         cfg, res = e["config"], e["results"]
         w = cfg.get("benchmark")
@@ -134,11 +144,11 @@ def build_report(data, meta_path):
         lines.append("- Policies: MGLRU (kernel baseline), MRU, FIFO, S3-FIFO, LHD, "
                      "LFU (`cache_ext_sampling`), ML-protect (`cache_ext_fifo_ml_protect`), "
                      "ML-rank (`cache_ext_ml_sampling`)")
-        lines.append("- Both ML variants use the same per-workload matched model "
+        lines.append("- All ML variants use the same per-workload matched model "
                      "(binary reuse classifier). ML-protect: binary skip-in-place "
-                     "protection over FIFO order. ML-rank: sampled eviction "
-                     "(groups of 20) with the model logit as the score — the "
-                     "ranking ablation.\n")
+                     "protection over FIFO order. ML-rank: sampled eviction with "
+                     "the model logit as the score (min-logit of each sample "
+                     "group evicted), swept at 10x/20x/30x/40x oversampling.\n")
         lines.append("| workload | model | AUC | F1 |")
         lines.append("|---|---|---:|---:|")
         for w, entry in sorted(meta.get("models", {}).items()):
@@ -218,13 +228,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--results", default=os.path.join(BASE, "results", "ycsb_eval_results.json"))
     ap.add_argument("--mglru", default=os.path.join(BASE, "results", "ycsb_eval_mglru.json"))
+    ap.add_argument("--ml10", default=os.path.join(BASE, "results", "ycsb_eval_ml10.json"))
+    ap.add_argument("--ml30", default=os.path.join(BASE, "results", "ycsb_eval_ml30.json"))
+    ap.add_argument("--ml40", default=os.path.join(BASE, "results", "ycsb_eval_ml40.json"))
     ap.add_argument("--no-plot", action="store_true")
     ap.add_argument("--report-md",
                     default=os.path.join(BASE, "results", "ycsb_eval_report.md"),
                     help="Path for the consolidated markdown report")
     args = ap.parse_args()
 
-    data = collect(args.results, args.mglru)
+    data = collect(args.results, args.mglru,
+                   {"ml10": args.ml10, "ml30": args.ml30, "ml40": args.ml40})
     print_tables(data)
     write_csv(data, os.path.join(BASE, "results", "ycsb_eval_summary.csv"))
     if not args.no_plot:

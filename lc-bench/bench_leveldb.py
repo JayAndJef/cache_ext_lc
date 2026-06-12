@@ -118,6 +118,7 @@ class LevelDBBenchmark(BenchmarkFramework):
             self.args.policy_loader,
             self.args.leveldb_temp_db,
             self.args.model_file,
+            extra_args=self.args.policy_extra_args,
         )
         CLEANUP_TASKS.append(lambda: self.cache_ext_policy.stop())
 
@@ -169,6 +170,13 @@ class LevelDBBenchmark(BenchmarkFramework):
             type=str,
             default=None,
             help="Memory limit for the cache_ext cgroup (e.g. 4G, 10G). Defaults to 10G for LevelDB workloads.",
+        )
+        parser.add_argument(
+            "--policy-extra-args",
+            type=str,
+            default="",
+            help="Extra CLI args passed through to the policy loader verbatim, "
+            "e.g. '--sample_size 30' for cache_ext_ml_sampling.",
         )
         parser.add_argument(
             "--cache-ext-only",

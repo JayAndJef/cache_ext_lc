@@ -36,6 +36,12 @@ char _license[] SEC("license") = "GPL";
 // Single FIFO list for all pages (no insertion-time placement).
 __u64 sampling_list;
 
+// Oversampling factor: each eviction pops request_nr x sample_size folios off
+// the list front and evicts the min-logit folio of each consecutive group of
+// sample_size. Set by the loader (--sample_size) before skeleton load;
+// default matches the sampled-LFU baseline.
+const volatile __u32 sample_size = 20;
+
 struct tracer_page_key {
 	__u32 dev;
 	__u64 ino;
@@ -485,11 +491,8 @@ void BPF_STRUCT_OPS(ml_sampling_evict_folios,
 {
 	dbg_printk("cache_ext: ml_sampling_evict_folios\n");
 
-	// Same oversampling factor as the sampled-LFU policy: pop
-	// request_nr x 20 from the front, evict the min-logit of each group of
-	// 20, put the rest back at the tail.
 	struct sampling_options sampling_opts = {
-		.sample_size = 20,
+		.sample_size = sample_size,
 	};
 	bpf_cache_ext_list_sample(memcg, sampling_list, ml_score_fn,
 				  &sampling_opts, eviction_ctx);

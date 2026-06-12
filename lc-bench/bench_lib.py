@@ -4,6 +4,7 @@ import logging
 import os
 import resource
 import select
+import shlex
 import subprocess
 import sys
 from abc import ABC, abstractmethod
@@ -41,11 +42,15 @@ class CacheExtPolicy:
     def set_cgroup(self, cgroup: str):
         self.cgroup_path = f"/sys/fs/cgroup/{cgroup}"
 
-    def __init__(self, cgroup: str, loader_path: str, watch_dir: str, model_file: str = None):
+    def __init__(self, cgroup: str, loader_path: str, watch_dir: str, model_file: str = None,
+                 extra_args: str = ""):
         self.set_cgroup(cgroup)
         self.loader_path = loader_path
         self.watch_dir = watch_dir
         self.model_file = model_file
+        # Extra loader CLI args passed through verbatim (shlex-split), e.g.
+        # "--sample_size 30" for cache_ext_ml_sampling.
+        self.extra_args = extra_args
         self.has_started = False
         self._policy_thread = None
 
@@ -71,6 +76,9 @@ class CacheExtPolicy:
 
         if log_dir:
             cmd += ["--log_dir", log_dir]
+
+        if self.extra_args:
+            cmd += shlex.split(self.extra_args)
 
         log.info("Starting policy thread: %s", cmd)
         # The loader prints progress lines ("Logged N access events") from
