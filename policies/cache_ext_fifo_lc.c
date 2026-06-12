@@ -152,7 +152,7 @@ static int handle_eviction(void *ctx, void *data, size_t len)
 	}
 
 	eviction_count++;
-	if (eviction_count % 100 == 0) {
+	if (eviction_count % 10000 == 0) {
 		printf("Logged %lu eviction events\n", eviction_count);
 	}
 

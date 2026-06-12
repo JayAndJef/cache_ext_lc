@@ -240,6 +240,9 @@ class LevelDBBenchmark(BenchmarkFramework):
                 log_dir = "/mydata/cache_ext_logs/%s/iter_%d" % (
                     config["benchmark"], config["iteration"])
                 run(["sudo", "mkdir", "-p", log_dir])
+                # The bench process (non-root) opens loader.log in this dir;
+                # sudo mkdir leaves it root-owned, so hand it to the bench user.
+                run(["sudo", "chown", "%d:%d" % (os.getuid(), os.getgid()), log_dir])
                 self.cache_ext_policy.start(log_dir=log_dir)
             elif policy_loader_name == "cache_ext_s3fifo.out":
                 self.cache_ext_policy.start(cgroup_size=config["cgroup_size"])

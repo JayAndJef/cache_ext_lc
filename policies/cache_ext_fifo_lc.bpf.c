@@ -80,14 +80,18 @@ struct {
 // Logging //
 ////////////
 
+// Sizing: at observed YCSB rates (~73k access events/s x 96 B/record incl.
+// ringbuf header) 1 MiB holds only ~150 ms of events — one slow poll iteration
+// away from silent drops (bpf_ringbuf_reserve fails, event lost). 32 MiB gives
+// ~5 s of headroom for access, 8 MiB ~7 s for insertion (~28k/s x 40 B).
 struct {
 	__uint(type, BPF_MAP_TYPE_RINGBUF);
-	__uint(max_entries, 1 << 20);
+	__uint(max_entries, 1 << 25);
 } rb_access SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_RINGBUF);
-	__uint(max_entries, 1 << 20);
+	__uint(max_entries, 1 << 23);
 } rb_insertion SEC(".maps");
 
 struct {

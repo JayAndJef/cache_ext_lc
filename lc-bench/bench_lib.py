@@ -73,16 +73,24 @@ class CacheExtPolicy:
             cmd += ["--log_dir", log_dir]
 
         log.info("Starting policy thread: %s", cmd)
+        # The loader prints progress lines ("Logged N access events") from
+        # inside its ring-buffer poll loop. With stdout=PIPE nothing drains the
+        # pipe until stop() calls communicate(), so after ~64 KiB of output the
+        # loader's printf blocks, the poll loop freezes, and the kernel ring
+        # buffers silently drop all further events (truncated tracer logs).
+        # Write to a real file instead: file writes never block on a reader.
+        loader_log_dir = log_dir if log_dir else "/tmp"
+        self._loader_log_path = os.path.join(loader_log_dir, "loader.log")
+        self._loader_log_file = open(self._loader_log_path, "w")
         self._policy_thread = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            cmd, stdout=self._loader_log_file, stderr=subprocess.STDOUT
         )
         sleep(10)
 
         if self._policy_thread.poll() is not None:
-            raise Exception(
-                "Policy thread exited unexpectedly: %s"
-                % self._policy_thread.stderr.read().decode("utf-8")
-            )
+            self._loader_log_file.close()
+            with open(self._loader_log_path) as f:
+                raise Exception("Policy thread exited unexpectedly: %s" % f.read())
 
     def stop(self):
         if not self.has_started:
@@ -101,11 +109,11 @@ class CacheExtPolicy:
             run(["sudo", "pkill", "-INT", "-P", str(sudo_pid)])
         with suppress(subprocess.CalledProcessError):
             run(["sudo", "kill", "-2", str(sudo_pid)])
-        out, err = self._policy_thread.communicate()
+        self._policy_thread.communicate()
         with suppress(subprocess.CalledProcessError):
             run(["sudo", "rm", "/sys/fs/bpf/cache_ext/scan_pids"])
-        log.info("Policy thread stdout: %s", out.decode("utf-8"))
-        log.info("Policy thread stderr: %s", err.decode("utf-8"))
+        self._loader_log_file.close()
+        log.info("Policy loader output written to %s", self._loader_log_path)
         self.has_started = False
         self._policy_thread = None
 
