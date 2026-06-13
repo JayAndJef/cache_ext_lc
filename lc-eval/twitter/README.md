@@ -22,11 +22,12 @@ stream-extracts from the public GCS bucket into `/mydata`:
 
 Eval (`run_model_eval.sh`, `run_ml_sampling_eval.sh`, `reproduce_eval.sh`) needs
 a **matched model per cluster** at
-`<model-dir>/twitter_cluster<N>/model_weights.json` (default `--model-dir`:
+`<model-dir>/twitter_cluster<N>_bench/model_weights.json` (the dir is keyed by
+the benchmark name, like ycsb's `ycsb_a/`; default `--model-dir`:
 `/mydata/models-jun-11`). The scripts **hard-error** if any cluster's model is
 missing. Produce them first: `collect_traces.sh` → train per cluster with
 `learnedcache/evict_classifier` → drop `model_weights.json` (and optional
-`metrics.json`) under `twitter_cluster<N>/`.
+`metrics.json`) under `twitter_cluster<N>_bench/`.
 
 ## Scripts
 
