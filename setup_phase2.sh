@@ -37,8 +37,10 @@ echo "==> Building BPF policies..."
 ./build_policies.sh
 
 echo ""
-echo "Setup complete. Run benchmarks with:"
-echo "  lc-eval/ycsb/run.sh <leveldb_db_path> [--model-file <model.json>] [--cgroup-memory 10G]"
-echo "  lc-eval/twitter/run.sh [--model-file <model.json>] [--clusters \"17 18 24 34 52\"]"
+echo "Setup complete."
 echo "Collect tracer training data with:"
+echo "  lc-eval/ycsb/collect_traces.sh <leveldb_db_path>"
 echo "  lc-eval/twitter/collect_traces.sh"
+echo "Run evaluations with (see lc-eval/ycsb/README.md for the full pipeline):"
+echo "  lc-eval/ycsb/run_model_eval.sh <leveldb_db_path> --stage 1"
+echo "  lc-eval/twitter/run.sh [--model-file <model.json>] [--clusters \"17 18 24 34 52\"]"

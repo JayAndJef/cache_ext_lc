@@ -15,52 +15,28 @@ All policy builds and runs must happen on the custom `cache-ext` Linux kernel. B
 - **Setup (two manual scripts, no cron)**: `./setup_phase1.sh` (no cache-ext kernel yet) installs the kernel, selects it via `grub-reboot`, and reboots. After the reboot, `./setup_phase2.sh` runs `install_misc.sh`, `download_dbs.sh`, `download_twitter_dbs.sh`, `install_leveldb.sh`, `install_ycsb.sh`, `build_policies.sh` in order (hard-fails if not on the cache-ext kernel).
 - Build all BPF policies + userspace loaders: `./build_policies.sh` (wraps `make -C policies -j`). Outputs `policies/<name>.out` binaries. Clean with `make -C policies clean`.
 - Regenerate `policies/vmlinux.h` (rare): delete it; the Makefile rebuilds it via `bpftool btf dump`.
-- **YCSB+LevelDB (primary benchmark)**: `lc-eval/ycsb/run.sh <leveldb_db_path> [--model-file <model.json>] [--cgroup-memory 10G]`. Runs all cache_ext policies + `fifo_lc` tracer. Adds `fifo_ml_protect` only when `--model-file` is given. Results go to `results/ycsb_results.json` and `results/ycsb_results_mglru.json`. Binary logs from `fifo_lc` go to `/mydata/cache_ext_logs/<benchmark>/iter_<N>/` with three files per iteration, named `mglru_lc_{access,insertion,eviction}_{unix_ts}.bin`. Read with `policies/read_binary_logs.py` (struct layouts must match). See `lc-eval/ycsb/README.md` for full details.
+- **YCSB+LevelDB (primary benchmark)**: driven by the scripts in `lc-eval/ycsb/` — `lc-eval/ycsb/README.md` documents the full reproduction pipeline in order. `collect_traces.sh <db>` collects `fifo_lc` tracer training data (binary logs to `/mydata/cache_ext_logs/<benchmark>/iter_<N>/`, three `mglru_lc_{access,insertion,eviction}_{unix_ts}.bin` per dir; read with `policies/read_binary_logs.py`). `run_model_eval.sh <db> --stage <1|2>` runs the staged ml_protect-vs-baselines eval with matched per-workload models (→ `results/ycsb_eval_results.json` + `ycsb_eval_mglru.json`). `run_ml_sampling_eval.sh` runs ML-rank factor sweeps (separate results file per factor — checkpointing can't see loader-only args). `collect_evict_latency.sh` + `summarize_evict_latency.py` measure eviction-decision latency. (The former generic `run.sh` full-sweep was removed; nothing depended on it.)
 - **Twitter traces (paper Fig 8, clusters 17/18/24/34/52)**: artifacts via `./download_twitter_dbs.sh` (stream-extracts per-cluster pre-initialized DBs to `/mydata/leveldb_twitter_cluster<N>_db` and trace files to `/mydata/twitter-traces`). Full sweep: `lc-eval/twitter/run.sh [--model-file <json>] [--clusters "17 18 24 34 52"]` → per-cluster `results/twitter_results_<N>{,_mglru}.json`. Tracer training data: `lc-eval/twitter/collect_traces.sh` → `/mydata/cache_ext_logs/twitter_cluster<N>_bench/iter_<I>/`. Driven by `lc-bench/bench_twitter_trace.py` (mirrors `bench_leveldb.py`; key differences: cgroup sized per cluster as `--cgroup-size-pct` (default 10%) of DB size +20 MiB, min 70 MiB — no `--cgroup-memory`; trace file `cat`-preloaded outside the cgroup). Twitter scripts build My-YCSB's `leveldb-latency` branch (latency tracking disabled — its arrays would dwarf the tiny cgroups), so Twitter results are **throughput-only**; the ycsb scripts switch the submodule back to `master`, and all branch switches use `git checkout -f` because the harness edits config YAMLs in-tree.
 - **filebench tracer** (`lc-eval/fifo/`): legacy/broken — the bench scripts it depended on were removed (and the ranker-era `lc-eval/fifo-ml/` harness was deleted). Use `lc-eval/ycsb/` instead.
 - **Parse tracer binary logs to CSV**: `policies/read_binary_logs.py`. The struct layouts at the top of that file (`FORMAT = '<QQQQQIIQQI4xQII'`) must stay in sync with `struct cache_access_fields` in both the `.bpf.c` and `.c` for each policy — if you change one, change all three.
-- **Run YCSB bench directly**: `python3 lc-bench/bench_leveldb.py --policy-loader policies/<policy>.out --leveldb-db <db> --bench-binary-dir My-YCSB/build --benchmark ycsb_a,... [--model-file <json>] [--cgroup-memory 10G]`. Pass `--model-file` only with `cache_ext_fifo_ml_protect.out` (the `CacheExtPolicy` forwards it to the loader); `lc-eval/ycsb/run.sh` wires this up automatically when `--model-file` is given.
+- **Run YCSB bench directly**: `python3 lc-bench/bench_leveldb.py --policy-loader policies/<policy>.out --leveldb-db <db> --bench-binary-dir My-YCSB/build --benchmark ycsb_a,... [--model-file <json>] [--cgroup-memory 10G]`. Pass `--model-file` only with `cache_ext_fifo_ml_protect.out` or `cache_ext_ml_sampling.out` (the `CacheExtPolicy` forwards it to the loader); `run_model_eval.sh`/`run_ml_sampling_eval.sh` wire the matched per-workload models up automatically.
 
-### Running the tracer for training data (resume notes)
+### Running the tracer for training data
 
-To collect `cache_ext_fifo_lc` training logs without the full 8-policy `run.sh`
-sweep, run the tracer alone via `bench_leveldb.py` — but `run.sh` is the only
-path that disables MGLRU, and **the eviction log stays 0 bytes while MGLRU is
+Use `lc-eval/ycsb/collect_traces.sh <db>` (YCSB) or
+`lc-eval/twitter/collect_traces.sh` (Twitter clusters). They handle everything
+a manual run gets wrong: **the eviction log stays 0 bytes while MGLRU is
 enabled** (cgroup reclaim takes the MGLRU path and never reaches cache_ext's
-`evict_folios`). So a manual direct run must wrap the bench with the mglru
-toggles:
+`evict_folios`), so they disable MGLRU and always restore it on exit; they
+clear `/mydata/cache_ext_logs/*` first (avoid mixing prior runs into training
+data); and they pass `--cache-ext-only` (the plain-Linux baseline pass emits
+no `.bin` logs and would just double wall-clock).
 
-```bash
-sudo rm -rf /mydata/cache_ext_logs/*          # avoid mixing prior runs into training data
-utils/disable-mglru.sh                         # /sys/.../lru_gen/enabled -> 0x0000
-python3 lc-bench/bench_leveldb.py \
-    --cpu 8 --policy-loader policies/cache_ext_fifo_lc.out \
-    --results-file results/ycsb_results_tracer.json \
-    --leveldb-db /mydata/leveldb --bench-binary-dir My-YCSB/build \
-    --fadvise-hints "" --iterations 1 --cgroup-memory 10G \
-    --benchmark "ycsb_c,ycsb_b,ycsb_e"
-utils/enable-mglru.sh                          # restore default -> 0x0007
-```
-
-- **Workloads run so far:** `ycsb_c,ycsb_b,ycsb_e` (read/scan subset). Full set is
-  `ycsb_a,ycsb_b,ycsb_c,ycsb_d,ycsb_e,ycsb_f,uniform,uniform_read_write` — extend
-  by adding to `--benchmark` (skip workloads already collected to save disk).
-- **Disk budget:** ~1.6–2 GiB of logs per workload-iteration; `/mydata` had ~44
-  GiB free, so the full 8 workloads × 3 iters (~48 GiB) does NOT fit — use 1
-  iteration and/or a subset. Logs land in
+- **Disk budget:** ~1.6–2.7 GiB of logs per workload-iteration — check
+  `df -h /mydata` before multi-iteration runs. Logs land in
   `/mydata/cache_ext_logs/<benchmark>/iter_<N>/` (three `mglru_lc_{access,
   insertion,eviction}_*.bin` per dir). Parse with `policies/read_binary_logs.py`.
-- These steps mirror what `lc-eval/ycsb/run.sh` does around its policy loop; the
-  full debugging history that made this work is in `SETUP_PHASE2_NOTES.md`.
-- **Baseline phase is wasted work for tracing — skip it next time.** Without
-  `--default-only`, `generate_configs` (`bench_leveldb.py:191-211`) pairs *two*
-  configs per workload: a `baseline_test` (plain-Linux, no `policy_loader`) and
-  the `cache_ext_test` (the tracer). The baseline produces **no** `.bin` trace
-  files — only throughput numbers in the results JSON we don't need for training
-  — so it just ~doubles wall-clock. There is no built-in "cache-ext-only" flag
-  (`--default-only` is the opposite, baseline-only). To collect traces faster,
-  add a small harness option (e.g. only emit `DEFAULT_CACHE_EXT_CGROUP` in the
-  `else` branch) so future tracer runs skip the baseline pass entirely.
+- The debugging history behind this setup is in `SETUP_PHASE2_NOTES.md`.
 - **Temp DB lifecycle:** `reset_database` (`bench_leveldb.py:16`, called per-config
   from `benchmark_prepare`) does `rm -rf "$TEMP"; cp -al ...` at the *start* of
   every config, so `<db>_temp` is wiped/recreated before each workload and never

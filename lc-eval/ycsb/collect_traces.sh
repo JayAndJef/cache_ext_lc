@@ -2,8 +2,8 @@
 # YCSB+LevelDB tracer data collection.
 #
 # Runs ONLY the cache_ext_fifo_lc tracer (the policy that emits training logs),
-# skipping the no-trace baseline pass via --cache-ext-only. This is the lean
-# counterpart to run.sh, which runs the full multi-policy evaluation sweep.
+# skipping the no-trace baseline pass via --cache-ext-only. The multi-policy
+# evaluation sweep lives in run_model_eval.sh / run_ml_sampling_eval.sh.
 #
 # MGLRU is disabled for the duration (the cache_ext eviction log stays empty
 # while MGLRU is enabled) and ALWAYS restored on exit. Binary trace logs land in

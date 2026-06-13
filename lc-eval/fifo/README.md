@@ -8,7 +8,7 @@
 
 ## What to use instead
 
-`lc-eval/ycsb/run.sh <leveldb_db_path>` runs `cache_ext_fifo_lc` as one of the benchmark policies. Logs are written to a per-workload, per-iteration directory:
+`lc-eval/ycsb/collect_traces.sh <leveldb_db_path>` runs the `cache_ext_fifo_lc` tracer (there is also a Twitter variant, `lc-eval/twitter/collect_traces.sh`). Logs are written to a per-workload, per-iteration directory:
 
 ```
 /mydata/cache_ext_logs/<benchmark>/iter_<N>/mglru_lc_access_<ts>.bin

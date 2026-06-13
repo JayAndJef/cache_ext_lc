@@ -2,9 +2,10 @@
 # Staged YCSB+LevelDB evaluation of cache_ext_fifo_ml_protect (matched model
 # per workload) against the upstream cache_ext baseline policies.
 #
-# Derived from run.sh, with: 1 iteration; 6 YCSB workloads (no uniform);
-# fifo_lc and the BPF-mglru policy dropped; ml_protect run per-workload with
-# its matching model from MODEL_DIR; and a manual stage gate:
+# Derived from the (since removed) generic run.sh sweep, with: 1 iteration;
+# 6 YCSB workloads (no uniform); fifo_lc and the BPF-mglru policy dropped;
+# ml_protect run per-workload with its matching model from MODEL_DIR; and a
+# manual stage gate:
 #   --stage 1            run ycsb_a only (6 configs), print gate report, exit
 #   --stage 2 --resume   run all workloads (ycsb_a checkpoint-skips) + the
 #                        kernel-MGLRU baseline pass
@@ -12,7 +13,7 @@
 # Results: results/ycsb_eval_results.json  (cache_ext policies + ML)
 #          results/ycsb_eval_mglru.json    (kernel MGLRU baseline)
 # MGLRU is disabled during cache_ext runs and ALWAYS restored to enabled on
-# exit (machine default), unlike run.sh which leaves it disabled.
+# exit (machine default).
 set -eu -o pipefail
 
 usage() {

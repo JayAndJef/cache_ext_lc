@@ -2,7 +2,8 @@
 # Twitter-trace benchmark: runs all cache_ext policies plus LC tracer and
 # (optionally) ML policy on the paper's five Twitter cache clusters.
 #
-# Twitter counterpart of lc-eval/ycsb/run.sh. Differences:
+# Full multi-policy sweep, structured like the lc-eval/ycsb eval scripts
+# (which call bench_leveldb.py per policy). Twitter-specific differences:
 #   - per-cluster DBs (leveldb_twitter_cluster<N>_db), so we loop clusters and
 #     write one results file per cluster instead of a single shared file
 #   - cgroup is sized per cluster at --cgroup-size-pct of the DB (paper: 10%),
