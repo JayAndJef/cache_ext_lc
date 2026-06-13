@@ -3,8 +3,8 @@
 #
 # Runs ONLY the cache_ext_fifo_lc tracer (the policy that emits training logs),
 # skipping the no-trace baseline pass via --cache-ext-only. This is the lean
-# counterpart to run.sh, which runs the full multi-policy evaluation sweep.
-# Twitter counterpart of lc-eval/ycsb/collect_traces.sh.
+# counterpart to run_model_eval.sh, which runs the full multi-policy evaluation
+# sweep. Twitter counterpart of lc-eval/ycsb/collect_traces.sh.
 #
 # MGLRU is disabled for the duration (the cache_ext eviction log stays empty
 # while MGLRU is enabled) and ALWAYS restored on exit. Binary trace logs land in
@@ -94,7 +94,7 @@ for CLUSTER in $CLUSTERS; do
 	python3 "$BENCH_PATH/bench_twitter_trace.py" \
 		--cpu 8 \
 		--policy-loader "$POLICY_PATH/cache_ext_fifo_lc.out" \
-		--results-file "$RESULTS_PATH/twitter_results_${CLUSTER}_tracer.json" \
+		--results-file "$RESULTS_PATH/twitter_results_tracer.json" \
 		--leveldb-db "$DB_DIRS/leveldb_twitter_cluster${CLUSTER}_db" \
 		--bench-binary-dir "$YCSB_PATH/build" \
 		--twitter-traces-dir "$DB_DIRS/twitter-traces" \
