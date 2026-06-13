@@ -9,6 +9,10 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
+// Need to find better way to enable this
+#undef bpf_printk
+#define bpf_printk(...) ((void)0)
+
 // Generic
 
 #define BPF_STRUCT_OPS(name, args...) \
