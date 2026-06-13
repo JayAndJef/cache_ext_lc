@@ -81,9 +81,11 @@ fi
 
 mkdir -p "$RESULTS_PATH"
 
-# Build My-YCSB
+# Build My-YCSB. -f discards the in-tree config YAML edits the harness makes
+# at runtime, which would otherwise block switching back from the
+# leveldb-latency branch the twitter scripts use.
 cd "$YCSB_PATH/build"
-git checkout master
+git checkout -f master
 make clean
 make -j run_leveldb
 cd -

@@ -63,7 +63,14 @@ mkdir -p "$RESULTS_PATH"
 
 # Ensure the LevelDB YCSB driver is built (build only run_leveldb; the other
 # backends need uninstalled dev libs and would fail the default `make` target).
-if [ ! -x "$YCSB_PATH/build/run_leveldb" ]; then
+# YCSB runs need the master branch: the twitter scripts leave the submodule on
+# leveldb-latency, whose binary silently reports all latencies as zero. -f
+# discards the in-tree config YAML edits the harness makes at runtime.
+if [ "$(cd "$YCSB_PATH" && git rev-parse --abbrev-ref HEAD)" != "master" ]; then
+	echo "==> Switching My-YCSB to master branch and rebuilding..."
+	(cd "$YCSB_PATH" && git checkout -f master)
+	(cd "$YCSB_PATH/build" && cmake .. && make clean && make -j run_leveldb)
+elif [ ! -x "$YCSB_PATH/build/run_leveldb" ]; then
 	echo "==> Building My-YCSB run_leveldb..."
 	(cd "$YCSB_PATH/build" && cmake .. && make -j run_leveldb)
 fi

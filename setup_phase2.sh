@@ -24,6 +24,9 @@ echo "==> Installing misc packages..."
 echo "==> Downloading LevelDB database..."
 ./download_dbs.sh
 
+echo "==> Downloading Twitter trace artifacts..."
+./download_twitter_dbs.sh
+
 echo "==> Building LevelDB..."
 ./install_leveldb.sh
 
@@ -36,3 +39,6 @@ echo "==> Building BPF policies..."
 echo ""
 echo "Setup complete. Run benchmarks with:"
 echo "  lc-eval/ycsb/run.sh <leveldb_db_path> [--model-file <model.json>] [--cgroup-memory 10G]"
+echo "  lc-eval/twitter/run.sh [--model-file <model.json>] [--clusters \"17 18 24 34 52\"]"
+echo "Collect tracer training data with:"
+echo "  lc-eval/twitter/collect_traces.sh"
