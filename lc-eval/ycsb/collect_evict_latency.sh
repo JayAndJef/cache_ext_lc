@@ -5,7 +5,8 @@
 # per invocation; this script captures /sys/kernel/tracing/trace_pipe to a
 # per-policy .trace file while a short ycsb_a run (45 s warmup + 120 s timed)
 # drives eviction pressure. One policy attached at a time -> attribution by
-# filename. Parse with summarize_evict_latency.py.
+# filename. The notebook (visualizations/results.ipynb) parses these .trace
+# files directly for fig8-10.
 set -eu -o pipefail
 
 DB_PATH="${1:-/mydata/leveldb}"
@@ -97,4 +98,6 @@ for F in 10 20 30 40; do
 done
 run_config mlprotect cache_ext_fifo_ml_protect.out --model-file "$MODEL_FILE"
 
-echo "==> Done. Summarize with: python3 lc-eval/ycsb/summarize_evict_latency.py"
+echo "==> Done. Raw per-tag .trace files in $OUT_DIR."
+echo "    Render the latency figures (fig8-10) from visualizations/results.ipynb,"
+echo "    which parses the .trace files directly."

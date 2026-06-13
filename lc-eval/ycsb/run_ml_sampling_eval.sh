@@ -1,18 +1,23 @@
 #!/bin/bash
 # Evaluate cache_ext_ml_sampling (sampled model-ranked eviction) on all 6 YCSB
-# workloads with matched per-workload models, appending to the same results
-# file as the main eval (different policy_loader name -> no checkpoint
-# collision). Archives each run's loader.log for attach evidence.
+# workloads with matched per-workload models, for ONE oversampling factor.
+# Archives each run's loader.log for attach evidence.
+#
+# PREFER reproduce_eval.sh as the entrypoint: the oversampling factor is NOT in
+# the bench config dict, so each factor must go to its own results file or they
+# checkpoint-collide. Here the destination file ($3) and the factor ($5) are
+# INDEPENDENT positional args — pass them mismatched and you'll write (say)
+# factor-40 numbers into a file named ml30 with nothing to catch it.
+# reproduce_eval.sh derives the file from the factor in a single loop, so they
+# can't drift.
 set -eu -o pipefail
 
 DB_PATH="${1:-/mydata/leveldb}"
 CGROUP_MEMORY="${2:-10G}"
-# Optional: separate results file + loader-log suffix per sample size (the
-# bench config dicts don't record it, so different factors must live in
-# different files or they checkpoint-collide).
+# Separate results file + loader-log suffix per sample size (see above).
 RES_OVERRIDE="${3:-}"
 LOG_SUFFIX="${4:-}"
-# Optional oversampling factor, forwarded to the loader (--sample_size).
+# Oversampling factor, forwarded to the loader (--sample_size).
 SAMPLE_SIZE="${5:-}"
 
 if ! uname -r | grep -q "cache-ext"; then
@@ -22,7 +27,9 @@ fi
 
 SCRIPT_PATH=$(realpath "$0")
 BASE_DIR=$(realpath "$(dirname "$SCRIPT_PATH")/../../")
-MODEL_DIR="/mydata/models-jun-11"
+# reproduce_eval.sh exports MODEL_DIR to pass through --model-dir; default
+# matches the standalone usage.
+MODEL_DIR="${MODEL_DIR:-/mydata/models-jun-11}"
 RES="${RES_OVERRIDE:-$BASE_DIR/results/ycsb_eval_results.json}"
 LOADER_LOG_DIR="$BASE_DIR/results/loader_logs"
 
