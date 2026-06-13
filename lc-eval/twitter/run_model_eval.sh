@@ -28,7 +28,7 @@ set -eu -o pipefail
 usage() {
 	echo "Usage: $0 [--model-dir <dir>] [--clusters \"17 18 24 34 52\"] [--iterations <n>] [--cgroup-size-pct <n>] [--resume]"
 	echo ""
-	echo "  --model-dir        dir with twitter_cluster<N>/model_weights.json per cluster (default: /mydata/models-jun-11)"
+	echo "  --model-dir        dir with twitter_cluster<N>_bench/model_weights.json per cluster (default: /mydata/models-jun-11)"
 	echo "  --clusters         space-separated Twitter cluster IDs (default: 17 18 24 34 52)"
 	echo "  --iterations       iterations per policy/cluster (default: 3)"
 	echo "  --cgroup-size-pct  cgroup memory as percent of cluster DB size (default: 10)"
@@ -101,8 +101,8 @@ done
 # Matched model present for every cluster? Hard-fail (mirrors the ycsb script):
 # train/upload per-cluster models before evaluating ml_protect.
 for CLUSTER in $CLUSTERS; do
-	if [ ! -f "$MODEL_DIR/twitter_cluster${CLUSTER}/model_weights.json" ]; then
-		echo "Error: missing model $MODEL_DIR/twitter_cluster${CLUSTER}/model_weights.json"
+	if [ ! -f "$MODEL_DIR/twitter_cluster${CLUSTER}_bench/model_weights.json" ]; then
+		echo "Error: missing model $MODEL_DIR/twitter_cluster${CLUSTER}_bench/model_weights.json"
 		echo "Collect traces (collect_traces.sh), train a per-cluster model, or pass --model-dir."
 		exit 1
 	fi
@@ -147,13 +147,13 @@ meta = {
     "models": {},
 }
 for c in clusters.split():
-    base = os.path.join(model_dir, f"twitter_cluster{c}")
+    base = os.path.join(model_dir, f"twitter_cluster{c}_bench")
     entry = {"model_file": os.path.join(base, "model_weights.json")}
     mpath = os.path.join(base, "metrics.json")
     if os.path.exists(mpath):
         with open(mpath) as f:
             entry["metrics"] = json.load(f)
-    meta["models"][f"twitter_cluster{c}"] = entry
+    meta["models"][f"twitter_cluster{c}_bench"] = entry
 with open(out, "w") as f:
     json.dump(meta, f, indent=2)
 print(f"Wrote {out}")
@@ -198,10 +198,10 @@ for POLICY in "${POLICIES[@]}"; do
 done
 
 for CLUSTER in $CLUSTERS; do
-	echo "==> [cluster $CLUSTER] policy: cache_ext_fifo_ml_protect (model: twitter_cluster$CLUSTER)"
+	echo "==> [cluster $CLUSTER] policy: cache_ext_fifo_ml_protect (model: twitter_cluster${CLUSTER}_bench)"
 	run_one "cache_ext_fifo_ml_protect" "$CLUSTER" "$RES" \
 		--cache-ext-only \
-		--model-file "$MODEL_DIR/twitter_cluster${CLUSTER}/model_weights.json"
+		--model-file "$MODEL_DIR/twitter_cluster${CLUSTER}_bench/model_weights.json"
 done
 
 # baseline_pass <results_file> -- plain-Linux (--default-only) runs, one per

@@ -23,7 +23,7 @@ usage() {
 	echo "  --sample-size      oversampling factor forwarded to the loader (--sample_size); required"
 	echo "  --results-file     results JSON (default: results/twitter_eval_ml<F>.json)"
 	echo "  --log-suffix       suffix for the archived per-cluster loader.log (default: _<F>)"
-	echo "  --model-dir        dir with twitter_cluster<N>/model_weights.json (default: /mydata/models-jun-11)"
+	echo "  --model-dir        dir with twitter_cluster<N>_bench/model_weights.json (default: /mydata/models-jun-11)"
 	echo "  --clusters         space-separated Twitter cluster IDs (default: 17 18 24 34 52)"
 	echo "  --iterations       iterations per cluster (default: 3)"
 	echo "  --cgroup-size-pct  cgroup memory as percent of cluster DB size (default: 10)"
@@ -81,8 +81,8 @@ for CLUSTER in $CLUSTERS; do
 		echo "Run ./download_twitter_dbs.sh first."
 		exit 1
 	fi
-	if [ ! -f "$MODEL_DIR/twitter_cluster${CLUSTER}/model_weights.json" ]; then
-		echo "Error: missing model $MODEL_DIR/twitter_cluster${CLUSTER}/model_weights.json"
+	if [ ! -f "$MODEL_DIR/twitter_cluster${CLUSTER}_bench/model_weights.json" ]; then
+		echo "Error: missing model $MODEL_DIR/twitter_cluster${CLUSTER}_bench/model_weights.json"
 		exit 1
 	fi
 done
@@ -115,7 +115,7 @@ echo "==> Disabling MGLRU..."
 echo "lru_gen enabled now: $(cat /sys/kernel/mm/lru_gen/enabled 2>/dev/null)"
 
 for CLUSTER in $CLUSTERS; do
-	echo "==> [cluster $CLUSTER] cache_ext_ml_sampling (model: twitter_cluster$CLUSTER, sample_size: $SAMPLE_SIZE)"
+	echo "==> [cluster $CLUSTER] cache_ext_ml_sampling (model: twitter_cluster${CLUSTER}_bench, sample_size: $SAMPLE_SIZE)"
 	python3 "$BENCH_PATH/bench_twitter_trace.py" \
 		--cpu 8 \
 		--policy-loader "$POLICY_PATH/cache_ext_ml_sampling.out" \
@@ -127,7 +127,7 @@ for CLUSTER in $CLUSTERS; do
 		--cgroup-size-pct "$CGROUP_SIZE_PCT" \
 		--cache-ext-only \
 		--benchmark "twitter_cluster${CLUSTER}_bench" \
-		--model-file "$MODEL_DIR/twitter_cluster${CLUSTER}/model_weights.json" \
+		--model-file "$MODEL_DIR/twitter_cluster${CLUSTER}_bench/model_weights.json" \
 		--policy-extra-args "--sample_size $SAMPLE_SIZE"
 	cp /tmp/loader.log "$LOADER_LOG_DIR/ml_sampling${LOG_SUFFIX}_twitter_cluster${CLUSTER}.log" 2>/dev/null || true
 done

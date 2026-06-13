@@ -28,7 +28,7 @@ set -eu -o pipefail
 usage() {
 	echo "Usage: $0 [--model-dir <dir>] [--clusters \"17 18 24 34 52\"] [--cgroup-size-pct <n>] [--iterations <n>] [--factors \"10 20 30 40\"] [--fresh]"
 	echo ""
-	echo "  --model-dir        dir with twitter_cluster<N>/model_weights.json per cluster (default: /mydata/models-jun-11)"
+	echo "  --model-dir        dir with twitter_cluster<N>_bench/model_weights.json per cluster (default: /mydata/models-jun-11)"
 	echo "  --clusters         space-separated Twitter cluster IDs (default: 17 18 24 34 52)"
 	echo "  --cgroup-size-pct  cgroup memory as percent of cluster DB size (default: 10)"
 	echo "  --iterations       iterations per policy/cluster (default: 3)"
@@ -85,8 +85,8 @@ for CLUSTER in $CLUSTERS; do
 		echo "Run ./download_twitter_dbs.sh first."
 		exit 1
 	fi
-	if [ ! -f "$MODEL_DIR/twitter_cluster${CLUSTER}/model_weights.json" ]; then
-		echo "Error: missing model $MODEL_DIR/twitter_cluster${CLUSTER}/model_weights.json"
+	if [ ! -f "$MODEL_DIR/twitter_cluster${CLUSTER}_bench/model_weights.json" ]; then
+		echo "Error: missing model $MODEL_DIR/twitter_cluster${CLUSTER}_bench/model_weights.json"
 		exit 1
 	fi
 done
@@ -186,7 +186,7 @@ out = {
     "iterations": int(iters),
     "factors": factors,
     "files": files,
-    "models": {f"twitter_cluster{c}": os.path.join(model_dir, f"twitter_cluster{c}", "model_weights.json")
+    "models": {f"twitter_cluster{c}_bench": os.path.join(model_dir, f"twitter_cluster{c}_bench", "model_weights.json")
                for c in clusters},
 }
 json.dump(out, open(manifest, "w"), indent=2)
