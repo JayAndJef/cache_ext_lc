@@ -91,6 +91,15 @@ class LevelDBTwitterTraceBenchmark(BenchmarkFramework):
             help="Cgroup memory limit as a percent of the cluster DB size (default: 10, as in the paper)",
         )
         parser.add_argument(
+            "--cgroup-floor-mib",
+            type=int,
+            default=192,
+            help="Minimum cgroup memory limit in MiB (default: 192). The original "
+            "70 MiB floor livelocked the ML sampler and exposed the kernel "
+            "sampling UAF, so the floor was raised to keep the small clusters "
+            "above that pathological regime.",
+        )
+        parser.add_argument(
             "--model-file",
             type=str,
             default=None,
@@ -141,6 +150,9 @@ class LevelDBTwitterTraceBenchmark(BenchmarkFramework):
         configs = add_config_option(
             "cgroup_size_pct", [self.args.cgroup_size_pct], configs
         )
+        configs = add_config_option(
+            "cgroup_floor_mib", [self.args.cgroup_floor_mib], configs
+        )
         if self.args.default_only:
             configs = add_config_option(
                 "cgroup_name", [DEFAULT_BASELINE_CGROUP], configs
@@ -171,12 +183,17 @@ class LevelDBTwitterTraceBenchmark(BenchmarkFramework):
         drop_page_cache()
         disable_swap()
         disable_smt()
-        # The paper sizes the cgroup at 10% of each cluster's DB, so unlike the
-        # YCSB harness the limit is computed per config, not passed as a flag.
+        # The cgroup is sized per config as a percent of the cluster's DB plus a
+        # small slack, then floored. The paper used 10% / 70 MiB, but that floor
+        # put clusters 17/18/24 into a permanent reclaim-thrash regime that
+        # livelocked the ML sampler and exposed the kernel sampling UAF, so both
+        # the percent (--cgroup-size-pct) and the floor (--cgroup-floor-mib) are
+        # now flags with relaxed defaults. The same values are used for tracer
+        # collection and eval (train/serve parity on cgroup pressure).
         db_size = dir_size(self.args.leveldb_temp_db)
         cgroup_size = int(db_size * config["cgroup_size_pct"] / 100)
         cgroup_size += 20 * MiB
-        cgroup_size = max(cgroup_size, 70 * MiB)
+        cgroup_size = max(cgroup_size, self.args.cgroup_floor_mib * MiB)
 
         # Load the trace file into the page cache outside the test cgroup so
         # the benchmark's trace reads aren't charged against the tiny limit.

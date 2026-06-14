@@ -3,22 +3,26 @@
 #
 # Runs ONLY the cache_ext_fifo_lc tracer (the policy that emits training logs),
 # skipping the no-trace baseline pass via --cache-ext-only. This is the lean
-# counterpart to run_model_eval.sh, which runs the full multi-policy evaluation
-# sweep. Twitter counterpart of lc-eval/ycsb/collect_traces.sh.
+# counterpart to the benchmarking scripts (run_heuristic_eval.sh +
+# run_ml_sampling_eval.sh), which run the full multi-policy evaluation sweep.
+# Twitter counterpart of lc-eval/ycsb/collect_traces.sh.
 #
 # MGLRU is disabled for the duration (the cache_ext eviction log stays empty
 # while MGLRU is enabled) and ALWAYS restored on exit. Binary trace logs land in
-# /mydata/cache_ext_logs/twitter_cluster<N>_bench/iter_<N>/ — parse with
-# policies/read_binary_logs.py.
+# /mydata/cache_ext_logs/twitter_cluster<N>_bench/iter_<N>/.
 set -eu -o pipefail
 
 usage() {
-	echo "Usage: $0 [--clusters \"17 18 24 34 52\"] [--iterations <n>] [--cgroup-size-pct <n>]"
+	echo "Usage: $0 [--clusters \"17 18 24 34 52\"] [--iterations <n>]"
 	echo ""
 	echo "  --clusters         space-separated Twitter cluster IDs (default: 17 18 24 34 52)"
 	echo "  --iterations       iterations per cluster (default: 1)"
-	echo "  --cgroup-size-pct  cgroup memory as percent of cluster DB size (default: 10,"
-	echo "                     matching the eval setup so training data sees the same pressure)"
+	echo ""
+	echo "Per-cluster cgroup sizing (size-pct + floor-mib) lives in cgroup_sizes.sh,"
+	echo "shared with run_heuristic_eval.sh and run_ml_sampling_eval.sh so the training"
+	echo "data sees the SAME memory pressure as the eval (train/serve parity). Lower a"
+	echo "small cluster's floor there (e.g. 18, whose DB is ~151 MiB) so it actually"
+	echo "evicts instead of caching its whole DB."
 	echo ""
 	echo "Expects /mydata/leveldb_twitter_cluster<N>_db and /mydata/twitter-traces"
 	echo "(see download_twitter_dbs.sh)."
@@ -27,13 +31,11 @@ usage() {
 
 CLUSTERS="17 18 24 34 52"
 ITERATIONS=1
-CGROUP_SIZE_PCT=10
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
-		--clusters)        CLUSTERS="$2";        shift 2 ;;
-		--iterations)      ITERATIONS="$2";      shift 2 ;;
-		--cgroup-size-pct) CGROUP_SIZE_PCT="$2"; shift 2 ;;
+		--clusters)   CLUSTERS="$2";   shift 2 ;;
+		--iterations) ITERATIONS="$2"; shift 2 ;;
 		*) echo "Unknown argument: $1"; usage ;;
 	esac
 done
@@ -52,6 +54,9 @@ YCSB_PATH="$BASE_DIR/My-YCSB"
 DB_DIRS=$(realpath "$BASE_DIR/../")
 RESULTS_PATH="$BASE_DIR/results"
 
+# Per-cluster cgroup sizing (shared with run_heuristic_eval.sh + run_ml_sampling_eval.sh).
+source "$(dirname "$SCRIPT_PATH")/cgroup_sizes.sh"
+
 for CLUSTER in $CLUSTERS; do
 	if [ ! -d "$DB_DIRS/leveldb_twitter_cluster${CLUSTER}_db" ]; then
 		echo "Error: cluster $CLUSTER database not found at $DB_DIRS/leveldb_twitter_cluster${CLUSTER}_db"
@@ -59,6 +64,9 @@ for CLUSTER in $CLUSTERS; do
 		exit 1
 	fi
 done
+
+# Every requested cluster must have a cgroup-sizing entry (fail before setup).
+require_cluster_cgroups $CLUSTERS
 
 mkdir -p "$RESULTS_PATH"
 
@@ -91,6 +99,7 @@ echo "lru_gen enabled now: $(cat /sys/kernel/mm/lru_gen/enabled 2>/dev/null)"
 
 for CLUSTER in $CLUSTERS; do
 	echo "==> Collecting traces for cluster ${CLUSTER} ($ITERATIONS iteration(s))"
+	read -r SIZE_PCT FLOOR_MIB <<< "${CGROUP_BY_CLUSTER[$CLUSTER]}"
 	python3 "$BENCH_PATH/bench_twitter_trace.py" \
 		--cpu 8 \
 		--policy-loader "$POLICY_PATH/cache_ext_fifo_lc.out" \
@@ -99,11 +108,11 @@ for CLUSTER in $CLUSTERS; do
 		--bench-binary-dir "$YCSB_PATH/build" \
 		--twitter-traces-dir "$DB_DIRS/twitter-traces" \
 		--iterations "$ITERATIONS" \
-		--cgroup-size-pct "$CGROUP_SIZE_PCT" \
+		--cgroup-size-pct "$SIZE_PCT" \
+		--cgroup-floor-mib "$FLOOR_MIB" \
 		--cache-ext-only \
 		--benchmark "twitter_cluster${CLUSTER}_bench"
 done
 
 echo "==> Tracer collection complete. Log sizes:"
 du -sh /mydata/cache_ext_logs/* 2>/dev/null
-echo "Parse with: policies/read_binary_logs.py"
