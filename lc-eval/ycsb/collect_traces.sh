@@ -3,21 +3,21 @@
 #
 # Runs ONLY the cache_ext_fifo_lc tracer (the policy that emits training logs),
 # skipping the no-trace baseline pass via --cache-ext-only. The multi-policy
-# evaluation sweep lives in run_model_eval.sh / run_ml_sampling_eval.sh.
+# evaluation sweep lives in run_heuristic_eval.sh / run_ml_sampling_eval.sh.
 #
 # MGLRU is disabled for the duration (the cache_ext eviction log stays empty
 # while MGLRU is enabled) and ALWAYS restored on exit. Binary trace logs land in
-# /mydata/cache_ext_logs/<benchmark>/iter_<N>/ — parse with
-# policies/read_binary_logs.py.
+# /mydata/cache_ext_logs/<benchmark>/iter_<N>/.
 set -eu -o pipefail
 
 usage() {
-	echo "Usage: $0 <leveldb_db_path> [--benchmarks <csv>] [--iterations <n>] [--cgroup-memory <size>]"
+	echo "Usage: $0 <leveldb_db_path> [--benchmarks <csv>] [--iterations <n>]"
 	echo ""
 	echo "  leveldb_db_path   path to the original (read-only) LevelDB database"
 	echo "  --benchmarks      comma-separated workloads (default: ycsb_a..f)"
 	echo "  --iterations      iterations per workload (default: 1)"
-	echo "  --cgroup-memory   memory limit for cgroup (e.g. 4G, 10G). Default: 10G"
+	echo ""
+	echo "The cgroup limit is a fixed 10G (train/serve parity with the eval)."
 	echo ""
 	echo "Example:  $0 /mydata/leveldb"
 	exit 1
@@ -30,13 +30,13 @@ shift
 
 BENCHMARKS="ycsb_a,ycsb_b,ycsb_c,ycsb_d,ycsb_e,ycsb_f"
 ITERATIONS=1
+# Fixed 10G cgroup (no per-workload sizing; train/serve parity with the eval).
 CGROUP_MEMORY="10G"
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 		--benchmarks)   BENCHMARKS="$2";    shift 2 ;;
 		--iterations)   ITERATIONS="$2";    shift 2 ;;
-		--cgroup-memory) CGROUP_MEMORY="$2"; shift 2 ;;
 		*) echo "Unknown argument: $1"; usage ;;
 	esac
 done
@@ -105,4 +105,3 @@ python3 "$BENCH_PATH/bench_leveldb.py" \
 
 echo "==> Tracer collection complete. Log sizes:"
 du -sh /mydata/cache_ext_logs/* 2>/dev/null
-echo "Parse with: policies/read_binary_logs.py"

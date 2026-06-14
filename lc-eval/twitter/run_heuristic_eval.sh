@@ -5,7 +5,7 @@
 # This script needs NO model directory -- the model policies (ml_protect and the
 # ml_sampling sweep) live entirely in run_ml_sampling_eval.sh. Splitting along
 # "needs a model or not" keeps each script's inputs honest. Twitter counterpart
-# of lc-eval/ycsb/run_model_eval.sh, heuristic half:
+# of lc-eval/ycsb/run_heuristic_eval.sh:
 #   - 5 classical cache_ext policies (mru, fifo, s3fifo, lhd, sampling). fifo_lc
 #     (now collect_traces.sh's job) and the BPF-mglru reimpl (not in the figure)
 #     are dropped.
