@@ -68,9 +68,9 @@ hard error.
   Usually called via `reproduce_eval.sh`.
 - `reproduce_eval.sh [--model-dir <dir>] [--clusters ...] [--iterations 1]
   [--factors "10 20 30 40"] [--fresh]`
-  — **one-command orchestrator.** Sequences `run_heuristic_eval.sh` (heuristics +
-  LRU/MGLRU baselines) → `run_ml_sampling_eval.sh` (ml_protect + the ML-rank
-  factor sweep, one `twitter_eval_ml<F>.json` per factor) →
+  — **one-command orchestrator.** Sequences `run_ml_sampling_eval.sh` (ml_protect +
+  the ML-rank factor sweep, one `twitter_eval_ml<F>.json` per factor) →
+  `run_heuristic_eval.sh` (heuristics + LRU/MGLRU baselines) →
   `twitter_eval_manifest.json` provenance.
 
 The notebook `visualizations/results.ipynb` is the consumer of the

@@ -16,12 +16,4 @@
 /mydata/cache_ext_logs/<benchmark>/iter_<N>/mglru_lc_eviction_<ts>.bin
 ```
 
-Parse with:
-
-```sh
-policies/read_binary_logs.py --type access  <bin_file>
-policies/read_binary_logs.py --type insertion <bin_file>
-policies/read_binary_logs.py --type eviction  <bin_file>
-```
-
 The top-level `run_workloads.sh` in the research root is also wired to this old path — see `Vagrantfile` `run-tracers` provisioner, which still calls `lc-eval/fifo/run.sh`.

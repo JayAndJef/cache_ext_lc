@@ -24,12 +24,13 @@
 set -eu -o pipefail
 
 usage() {
-	echo "Usage: $0 <leveldb_db_path> [--iterations <n>] [--resume]"
+	echo "Usage: $0 <leveldb_db_path> [--workloads \"a b c d e f\"] [--iterations <n>] [--resume]"
 	echo ""
+	echo "  --workloads        space-separated YCSB workload letters (default: a b c d e f)"
 	echo "  --iterations       iterations per policy/workload (default: 1)"
 	echo "  --resume           allow existing results files (completed configs checkpoint-skip)"
 	echo ""
-	echo "Runs all 6 YCSB workloads against the 5 classical cache_ext policies,"
+	echo "Runs the selected YCSB workloads against the 5 classical cache_ext policies,"
 	echo "then the Linux-LRU and kernel-MGLRU baseline passes. No model directory"
 	echo "required -- the model policies live in run_ml_sampling_eval.sh. Usually"
 	echo "invoked via reproduce_eval.sh."
@@ -41,12 +42,14 @@ if [ "$#" -lt 1 ]; then usage; fi
 DB_PATH="$1"
 shift
 
+WORKLOADS="a b c d e f"
 ITERATIONS=1
 RESUME=0
 CGROUP_MEMORY="10G"
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
+		--workloads)  WORKLOADS="$2";  shift 2 ;;
 		--iterations) ITERATIONS="$2"; shift 2 ;;
 		--resume)     RESUME=1;        shift   ;;
 		*) echo "Unknown argument: $1"; usage ;;
@@ -87,8 +90,9 @@ POLICIES=(
 	"cache_ext_sampling"
 )
 
-WORKLOADS=(a b c d e f)
-ALL_BENCHMARKS="ycsb_a,ycsb_b,ycsb_c,ycsb_d,ycsb_e,ycsb_f"
+# Comma-joined benchmark list for the batched bench call, derived from $WORKLOADS.
+ALL_BENCHMARKS=""
+for W in $WORKLOADS; do ALL_BENCHMARKS="${ALL_BENCHMARKS:+$ALL_BENCHMARKS,}ycsb_$W"; done
 
 mkdir -p "$RESULTS_PATH"
 

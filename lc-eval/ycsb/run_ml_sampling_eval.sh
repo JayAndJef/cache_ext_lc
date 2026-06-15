@@ -24,10 +24,11 @@
 set -eu -o pipefail
 
 usage() {
-	echo "Usage: $0 <leveldb_db_path> [--model-dir <dir>] [--iterations <n>] \\"
-	echo "          [--factors \"10 20 30 40\"] [--resume]"
+	echo "Usage: $0 <leveldb_db_path> [--model-dir <dir>] [--workloads \"a b c d e f\"] \\"
+	echo "          [--iterations <n>] [--factors \"10 20 30 40\"] [--resume]"
 	echo ""
 	echo "  --model-dir        dir with ycsb_<w>/model_weights.json per workload (default: /mydata/models-jun-11)"
+	echo "  --workloads        space-separated YCSB workload letters (default: a b c d e f)"
 	echo "  --iterations       iterations per policy/workload (default: 1)"
 	echo "  --factors          ML-rank oversampling factors to sweep (default: \"10 20 30 40\")"
 	echo "  --resume           allow existing results files (completed configs checkpoint-skip)"
@@ -45,6 +46,7 @@ shift
 # MODEL_DIR honors an exported env var (reproduce_eval.sh sets it) before the
 # /mydata default; an explicit --model-dir flag overrides both.
 MODEL_DIR="${MODEL_DIR:-/mydata/models-jun-11}"
+WORKLOADS="a b c d e f"
 ITERATIONS=1
 FACTORS="10 20 30 40"
 RESUME=0
@@ -53,6 +55,7 @@ CGROUP_MEMORY="10G"
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 		--model-dir)  MODEL_DIR="$2";  shift 2 ;;
+		--workloads)  WORKLOADS="$2";  shift 2 ;;
 		--iterations) ITERATIONS="$2"; shift 2 ;;
 		--factors)    FACTORS="$2";    shift 2 ;;
 		--resume)     RESUME=1;        shift   ;;
@@ -82,11 +85,9 @@ RES_PROTECT="$RESULTS_PATH/ycsb_eval_protect.json"
 META="$RESULTS_PATH/ycsb_eval_meta.json"
 LOADER_LOG_DIR="$RESULTS_PATH/loader_logs"
 
-WORKLOADS=(a b c d e f)
-
 # Matched models present for every workload? Hard-fail (mirrors the twitter
 # script): train/upload per-workload models before evaluating the model policies.
-for W in "${WORKLOADS[@]}"; do
+for W in $WORKLOADS; do
 	if [ ! -f "$MODEL_DIR/ycsb_$W/model_weights.json" ]; then
 		echo "Error: missing model $MODEL_DIR/ycsb_$W/model_weights.json"
 		echo "Collect traces (collect_traces.sh), train a per-workload model, or pass --model-dir."
@@ -128,16 +129,16 @@ fi
 
 # Record which model file maps to which workload: model_file is not part of the
 # bench config dicts, so the results JSON alone cannot attribute the model rows.
-python3 - "$META" "$MODEL_DIR" "$CGROUP_MEMORY" "$ITERATIONS" <<'EOF'
+python3 - "$META" "$MODEL_DIR" "$CGROUP_MEMORY" "$ITERATIONS" "$WORKLOADS" <<'EOF'
 import json, sys, os, subprocess
-out, model_dir, mem, iters = sys.argv[1:5]
+out, model_dir, mem, iters, workloads = sys.argv[1:6]
 meta = {
     "kernel": subprocess.check_output(["uname", "-r"]).decode().strip(),
     "cgroup_memory": mem,
     "iterations": int(iters),
     "models": {},
 }
-for w in "abcdef":
+for w in workloads.split():
     base = os.path.join(model_dir, f"ycsb_{w}")
     entry = {"model_file": os.path.join(base, "model_weights.json")}
     mpath = os.path.join(base, "metrics.json")
@@ -183,7 +184,7 @@ run_model() { # run_model <policy> <workload> <results_file> <log_tag> [extra ar
 
 # 1) cache_ext_fifo_ml_protect (skip-in-place reuse classifier), one row per
 #    workload -> ycsb_eval_protect.json.
-for W in "${WORKLOADS[@]}"; do
+for W in $WORKLOADS; do
 	echo "==> [ycsb_$W] cache_ext_fifo_ml_protect (model: ycsb_$W)"
 	run_model "cache_ext_fifo_ml_protect" "$W" "$RES_PROTECT" "ml_protect"
 done
@@ -194,7 +195,7 @@ done
 for F in $FACTORS; do
 	RES_ML="$RESULTS_PATH/ycsb_eval_ml${F}.json"
 	echo "==> [ml-rank] factor ${F}x -> $(basename "$RES_ML")"
-	for W in "${WORKLOADS[@]}"; do
+	for W in $WORKLOADS; do
 		echo "==> [ycsb_$W] cache_ext_ml_sampling (model: ycsb_$W, sample_size: $F)"
 		run_model "cache_ext_ml_sampling" "$W" "$RES_ML" "ml_sampling_${F}" \
 			--policy-extra-args "--sample_size $F"

@@ -29,9 +29,10 @@
 set -eu -o pipefail
 
 usage() {
-	echo "Usage: $0 <leveldb_db_path> [--model-dir <dir>] [--iterations <n>] [--factors \"10 20 30 40\"] [--fresh]"
+	echo "Usage: $0 <leveldb_db_path> [--model-dir <dir>] [--workloads \"a b c d e f\"] [--iterations <n>] [--factors \"10 20 30 40\"] [--fresh]"
 	echo ""
 	echo "  --model-dir       dir with ycsb_<w>/model_weights.json per workload (default: /mydata/models-jun-11)"
+	echo "  --workloads       space-separated YCSB workload letters (default: a b c d e f)"
 	echo "  --iterations      iterations per policy/workload (default: 1)"
 	echo "  --factors         ML-rank oversampling factors to sweep (default: \"10 20 30 40\")"
 	echo "  --fresh           delete existing eval result files first (full recompute);"
@@ -48,6 +49,7 @@ DB_PATH="$1"
 shift
 
 MODEL_DIR="/mydata/models-jun-11"
+WORKLOADS="a b c d e f"
 ITERATIONS=1
 FACTORS="10 20 30 40"
 FRESH=0
@@ -55,6 +57,7 @@ FRESH=0
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 		--model-dir)  MODEL_DIR="$2";  shift 2 ;;
+		--workloads)  WORKLOADS="$2";  shift 2 ;;
 		--iterations) ITERATIONS="$2"; shift 2 ;;
 		--factors)    FACTORS="$2";    shift 2 ;;
 		--fresh)      FRESH=1;         shift   ;;
@@ -89,7 +92,7 @@ MANIFEST="$RESULTS_PATH/ycsb_eval_manifest.json"
 mkdir -p "$RESULTS_PATH"
 
 # Preflight: matched models present for every workload.
-for W in a b c d e f; do
+for W in $WORKLOADS; do
 	if [ ! -f "$MODEL_DIR/ycsb_$W/model_weights.json" ]; then
 		echo "Error: missing model $MODEL_DIR/ycsb_$W/model_weights.json"
 		exit 1
@@ -124,22 +127,23 @@ sudo rm -f /tmp/loader.log
 # file<->factor binding cannot drift.
 echo "==> [1/3] Model policies: ml_protect + ml_sampling sweep (factors $FACTORS)..."
 "$EVAL_DIR/run_ml_sampling_eval.sh" \
-	"$DB_PATH" --model-dir "$MODEL_DIR" \
+	"$DB_PATH" --model-dir "$MODEL_DIR" --workloads "$WORKLOADS" \
 	--iterations "$ITERATIONS" --factors "$FACTORS" --resume
 
 # 2) Heuristic (no-model) policies: 5 classical cache_ext + Linux-LRU + kernel-MGLRU.
 echo "==> [2/3] Heuristic policies (5 classical) + LRU/MGLRU baselines..."
 "$EVAL_DIR/run_heuristic_eval.sh" \
-	"$DB_PATH" --iterations "$ITERATIONS" --resume
+	"$DB_PATH" --workloads "$WORKLOADS" --iterations "$ITERATIONS" --resume
 
 # 3) Manifest: the authoritative file->factor/baseline map (today this lives
 # only in filenames), plus run provenance.
 echo "==> [3/3] Writing manifest..."
 GIT_COMMIT=$(cd "$BASE_DIR" && git rev-parse HEAD 2>/dev/null || echo "unknown")
-python3 - "$MANIFEST" "$DB_PATH" "$MODEL_DIR" "$ITERATIONS" "$FACTORS" "$GIT_COMMIT" <<'EOF'
+python3 - "$MANIFEST" "$DB_PATH" "$MODEL_DIR" "$ITERATIONS" "$FACTORS" "$GIT_COMMIT" "$WORKLOADS" <<'EOF'
 import json, sys, os, subprocess
-manifest, db, model_dir, iters, factors_str, commit = sys.argv[1:7]
+manifest, db, model_dir, iters, factors_str, commit, workloads_str = sys.argv[1:8]
 factors = [int(x) for x in factors_str.split()]
+workloads = workloads_str.split()
 files = {
     "ycsb_eval_results.json": {
         "policies": ["cache_ext_mru", "cache_ext_fifo", "cache_ext_s3fifo",

@@ -121,20 +121,20 @@ fi
 # Stale root-owned loader log breaks the harness's open("w") for new runs.
 sudo rm -f /tmp/loader.log
 
-# 1) Heuristic (no-model) policies: 5 classical cache_ext + Linux-LRU + kernel-MGLRU.
-echo "==> [1/3] Heuristic policies (5 classical) + LRU/MGLRU baselines..."
-"$EVAL_DIR/run_heuristic_eval.sh" \
-	--clusters "$CLUSTERS" \
-	--iterations "$ITERATIONS" --resume
-
-# 2) Model policies: ml_protect (matched per-cluster models) + the ml_sampling
+# 1) Model policies: ml_protect (matched per-cluster models) + the ml_sampling
 # oversampling sweep (one twitter_eval_ml<F>.json per factor) + the cluster<->
 # model meta. The script owns the per-factor file derivation internally, so the
 # file<->factor binding cannot drift.
-echo "==> [2/3] Model policies: ml_protect + ml_sampling sweep (factors $FACTORS)..."
+echo "==> [1/3] Model policies: ml_protect + ml_sampling sweep (factors $FACTORS)..."
 "$EVAL_DIR/run_ml_sampling_eval.sh" \
 	--model-dir "$MODEL_DIR" --clusters "$CLUSTERS" \
 	--iterations "$ITERATIONS" --factors "$FACTORS" --resume
+
+# 2) Heuristic (no-model) policies: 5 classical cache_ext + Linux-LRU + kernel-MGLRU.
+echo "==> [2/3] Heuristic policies (5 classical) + LRU/MGLRU baselines..."
+"$EVAL_DIR/run_heuristic_eval.sh" \
+	--clusters "$CLUSTERS" \
+	--iterations "$ITERATIONS" --resume
 
 # 3) Manifest: the authoritative file->factor/baseline map (today this lives
 # only in filenames), plus run provenance.
