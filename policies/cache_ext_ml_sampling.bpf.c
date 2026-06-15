@@ -57,7 +57,6 @@ struct tracer_page_state {
 	__u64 last_access_delta;
 	__u64 prev_access_delta;
 	__u32 frequency;
-	s64 cached_partial; // as-of-access 8-feature partial logit; TSA added live at eviction
 };
 
 struct file_key {
@@ -177,48 +176,6 @@ inline bool is_folio_relevant(struct folio *folio)
 	return inode_in_watchlist(folio->mapping->host->i_ino);
 }
 
-/////////////
-// Scoring //
-/////////////
-
-// Discretize a feature value using interior bin edges.
-static inline __u8 discretize_feature(__u64 value, __u64 *bin_edges, __u8 n_bins) {
-	__u8 n_interior_edges = n_bins - 1;
-
-	if (n_interior_edges > 0 && value < bin_edges[0]) return 0;
-	if (n_interior_edges > 1 && value < bin_edges[1]) return 1;
-	if (n_interior_edges > 2 && value < bin_edges[2]) return 2;
-	if (n_interior_edges > 3 && value < bin_edges[3]) return 3;
-	if (n_interior_edges > 4 && value < bin_edges[4]) return 4;
-	if (n_interior_edges > 5 && value < bin_edges[5]) return 5;
-	if (n_interior_edges > 6 && value < bin_edges[6]) return 6;
-	if (n_interior_edges > 7 && value < bin_edges[7]) return 7;
-	if (n_interior_edges > 8 && value < bin_edges[8]) return 8;
-
-	return n_bins - 1;
-}
-
-// Weight contribution of one feature: bin `value`, return that bin's weight. __noinline to bound verifier cost.
-static __noinline s64 score_feature(u32 idx, u64 value) {
-	__u8 *n_bins_ptr = bpf_map_lookup_elem(&n_bins_map, &idx);
-	if (!n_bins_ptr)
-		return 0;
-	__u64 (*bin_edges)[MAX_BINS] = bpf_map_lookup_elem(&bin_edges_map, &idx);
-	if (!bin_edges)
-		return 0;
-	s64 (*weights)[MAX_BINS] = bpf_map_lookup_elem(&nn_weights_map, &idx);
-	if (!weights)
-		return 0;
-	__u8 n_bins = *n_bins_ptr;
-	if (n_bins == 0 || n_bins > MAX_BINS)
-		return 0;
-	__u8 bin = discretize_feature(value, *bin_edges, n_bins);
-	barrier_var(bin); // opaque so clang keeps the guard the verifier needs
-	if (bin >= MAX_BINS)
-		return 0;
-	return (*weights)[bin];
-}
-
 ////////////
 // Tracer //
 ////////////
@@ -326,28 +283,6 @@ static inline void track_folio_access(struct folio *folio) {
 		}
 	}
 
-	// Two-interval gaps (t_N - t_{N-2}) for PD2/ID2, matching the tracer's logged delta2 (not single-interval prev_access_delta).
-	u64 page_time_delta2 = UNKNOWN_DELTA_NS;
-	if (page_state && page_state->prev_access_time &&
-	    timestamp >= page_state->prev_access_time)
-		page_time_delta2 = timestamp - page_state->prev_access_time;
-
-	u64 inode_time_delta2 = UNKNOWN_DELTA_NS;
-	if (file_state && file_state->prev_access_time &&
-	    timestamp >= file_state->prev_access_time)
-		inode_time_delta2 = timestamp - file_state->prev_access_time;
-
-	// Cache the as-of-access 8-feature partial (logit minus TSA) -- closes the train/serve skew; eviction adds only the live TSA bin.
-	s64 cached_partial = 0;
-	cached_partial += score_feature(PD,  page_state ? page_time_delta : UNKNOWN_DELTA_NS);
-	cached_partial += score_feature(SZ,  file_size);
-	cached_partial += score_feature(FQ,  frequency);
-	cached_partial += score_feature(SD,  last_offset);
-	cached_partial += score_feature(PD2, page_time_delta2);
-	cached_partial += score_feature(ID,  file_state ? inode_time_delta : UNKNOWN_DELTA_NS);
-	cached_partial += score_feature(ID2, inode_time_delta2);
-	cached_partial += score_feature(IE,  inode_hotness_ema);
-
 	struct tracer_page_state new_page_state;
 	if (page_state) {
 		new_page_state.first_access_time = page_state->first_access_time;
@@ -363,7 +298,6 @@ static inline void track_folio_access(struct folio *folio) {
 	new_page_state.file_size = file_size;
 	new_page_state.last_access_delta = page_state ? page_time_delta : UNKNOWN_DELTA_NS;
 	new_page_state.frequency = frequency;
-	new_page_state.cached_partial = cached_partial;
 
 	bpf_map_update_elem(&per_folio_map, &folio_key, &new_page_state, BPF_ANY);
 
@@ -383,7 +317,25 @@ static inline void track_folio_access(struct folio *folio) {
 // ML Functions  //
 ///////////////////
 
-// Eviction logit = cached as-of-access partial + live TSA bin; S64_MAX if untracked.
+// Discretize a feature value using interior bin edges.
+static inline __u8 discretize_feature(__u64 value, __u64 *bin_edges, __u8 n_bins) {
+	__u8 n_interior_edges = n_bins - 1;
+
+	if (n_interior_edges > 0 && value < bin_edges[0]) return 0;
+	if (n_interior_edges > 1 && value < bin_edges[1]) return 1;
+	if (n_interior_edges > 2 && value < bin_edges[2]) return 2;
+	if (n_interior_edges > 3 && value < bin_edges[3]) return 3;
+	if (n_interior_edges > 4 && value < bin_edges[4]) return 4;
+	if (n_interior_edges > 5 && value < bin_edges[5]) return 5;
+	if (n_interior_edges > 6 && value < bin_edges[6]) return 6;
+	if (n_interior_edges > 7 && value < bin_edges[7]) return 7;
+	if (n_interior_edges > 8 && value < bin_edges[8]) return 8;
+
+	return n_bins - 1;
+}
+
+// Sum of per-bin weights over the 9 eviction-time features (the model logit
+// before bias). Returns S64_MAX if the folio has no tracked state yet.
 static inline s64 compute_feature_score(struct folio *folio) {
 	u32 s_dev = get_folio_dev(folio);
 	u64 i_ino = get_folio_ino(folio);
@@ -398,15 +350,68 @@ static inline s64 compute_feature_score(struct folio *folio) {
 	folio_key.ino = i_ino;
 	folio_key.offset = index;
 
+	struct file_key fkey;
+	__builtin_memset(&fkey, 0, sizeof(fkey));
+	fkey.dev = s_dev;
+	fkey.ino = i_ino;
+
 	struct tracer_page_state *page_state = bpf_map_lookup_elem(&per_folio_map, &folio_key);
-	if (!page_state)
+	struct file_state *file_state = bpf_map_lookup_elem(&per_file_map, &fkey);
+
+	if (!page_state || !file_state)
 		return S64_MAX;
 
 	u64 now = bpf_ktime_get_ns();
 	u64 tsa = now >= page_state->last_access_time ?
 		now - page_state->last_access_time : 0;
 
-	return page_state->cached_partial + score_feature(TSA, tsa);
+	u64 raw_features[NUM_MODEL_FEATURES];
+	raw_features[PD] = page_state->last_access_delta;
+	raw_features[SZ] = page_state->file_size;
+	raw_features[FQ] = page_state->frequency;
+	raw_features[SD] = file_state->last_offset;
+	// PD2/ID2 = two-interval gap t_N - t_{N-2} = last+prev delta (tracer parity); UNKNOWN if either missing
+	raw_features[PD2] = (page_state->last_access_delta == UNKNOWN_DELTA_NS || page_state->prev_access_delta == UNKNOWN_DELTA_NS) ? UNKNOWN_DELTA_NS : page_state->last_access_delta + page_state->prev_access_delta;
+	raw_features[ID] = file_state->last_access_delta;
+	raw_features[ID2] = (file_state->last_access_delta == UNKNOWN_DELTA_NS || file_state->prev_access_delta == UNKNOWN_DELTA_NS) ? UNKNOWN_DELTA_NS : file_state->last_access_delta + file_state->prev_access_delta;
+	raw_features[IE] = file_state->hotness_ema;
+	raw_features[TSA] = tsa;
+
+	s64 score = 0;
+
+#define PROCESS_FEATURE(feat_idx) \
+	do { \
+		u32 idx = (feat_idx); \
+		__u8 *n_bins_ptr = bpf_map_lookup_elem(&n_bins_map, &idx); \
+		if (n_bins_ptr) { \
+			__u64 (*bin_edges)[MAX_BINS] = bpf_map_lookup_elem(&bin_edges_map, &idx); \
+			if (bin_edges) { \
+				s64 (*weights)[MAX_BINS] = bpf_map_lookup_elem(&nn_weights_map, &idx); \
+				if (weights) { \
+					__u8 n_bins = *n_bins_ptr; \
+					if (n_bins > 0 && n_bins <= MAX_BINS) { \
+						__u8 bin = discretize_feature(raw_features[feat_idx], *bin_edges, n_bins); \
+						if (bin >= MAX_BINS) bin = MAX_BINS - 1; \
+						score += (*weights)[bin]; \
+					} \
+				} \
+			} \
+		} \
+	} while (0)
+
+	PROCESS_FEATURE(0);
+	PROCESS_FEATURE(1);
+	PROCESS_FEATURE(2);
+	PROCESS_FEATURE(3);
+	PROCESS_FEATURE(4);
+	PROCESS_FEATURE(5);
+	PROCESS_FEATURE(6);
+	PROCESS_FEATURE(7);
+	PROCESS_FEATURE(8);
+
+#undef PROCESS_FEATURE
+
+	return score;
 }
 
 /////////////////////
