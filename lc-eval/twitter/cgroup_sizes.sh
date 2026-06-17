@@ -22,12 +22,22 @@
 #               see real eviction pressure. Approx DB sizes: 17=920M, 18=151M,
 #               24=456M, 34=5.9G, 52=2.5G (34/52 are pct-dominated; 17/18/24 are
 #               floor-dominated).
+# Sizing tuned so each cluster's tracer eviction rate lands in [900,1300] evt/s
+# (goal 1100 +-200). size-pct is the only knob (multiples of 5%); floor-mib is
+# kept at 32 so it never binds (percent always controls). Round-1 measured @ the
+# unrounded pct then relabeled to nearest 5% (<2% shift, rate ~unchanged):
+#   17: 1254 @38%->FROZEN 40%   34: 1031 @56%->FROZEN 55%   52: 1148 @36%->FROZEN 35%
+# Round-2: 24: 1462@78%->85% = 1224 FROZEN.  18: 5137@41%->60% = 1667 still HIGH.
+# Round-3: 18@70% = 568 LOW (knee is steep: 60->70% is exp ~-8.4).
+# Round-4: 18 -> 65% (only multiple-of-5 in the 60/70% bracket; interp ~960).
+# OVERRIDE: 10%/70-floor for all clusters, to match results-old + protect@10/70
+# (same sizing -> apples-to-apples). Effective MiB: 17=112 18=70 24=70 34=614 52=266.
 declare -A CGROUP_BY_CLUSTER=(
-	[17]="15 192"
-	[18]="15 120"
-	[24]="15 192"
-	[34]="15 192"
-	[52]="15 192"
+	[17]="10 70"
+	[18]="10 70"
+	[24]="10 70"
+	[34]="10 70"
+	[52]="10 70"
 )
 
 # require_cluster_cgroups <cluster>... -- hard-fail (before any expensive setup)
